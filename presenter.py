@@ -21,6 +21,13 @@ class AppPresenter:
         success = self.model.set_current_workspace(workspace_name)
         if success:
             self.view.display_workspace(workspace_name)
+
+            # Désélectionner le segmented button si on navigue vers un workspace
+            # qui n'en fait pas partie (PREFERENCES, RECHERCHE RAPIDE)
+            segmented_values = ["DONNÉES BRUTES", "OBSERVATIONS", "EXTRACTIONS", "TRAITER"]
+            if workspace_name not in segmented_values:
+                if hasattr(self.view, "top_menu_view"):
+                    self.view.top_menu_view.deselect_all()
         else:
             print(f"Erreur: Workspace '{workspace_name}' introuvable")
 
@@ -85,7 +92,41 @@ class AppPresenter:
     def on_search_result_selected(self, result_data):
         """Gère la sélection d'un résultat de recherche."""
         print(f"Fichier sélectionné : {result_data.get('file_path')}")
-        # TODO: Implémenter l'ouverture/affichage du fichier
+
+    # ──────────────────────── Ajout aux données brutes ────────────────────────
+
+    def on_add_to_raw_data(self, file_data):
+        """Ajoute un fichier unique aux données brutes."""
+        if not file_data or not file_data.get("file_path"):
+            self._show_toast("Fichier invalide (chemin manquant)")
+            return
+
+        added = self.model.raw_data_manager.add_file(file_data)
+        name = file_data.get("file_name", "fichier")
+        if added:
+            self._show_toast(f"'{name}' ajouté aux données brutes")
+        else:
+            self._show_toast(f"'{name}' est déjà dans les données brutes")
+
+    def on_add_multiple_to_raw_data(self, files_data):
+        """Ajoute plusieurs fichiers aux données brutes."""
+        if not files_data:
+            return
+        count = self.model.raw_data_manager.add_files(files_data)
+        total = len(files_data)
+        if count == 0:
+            self._show_toast(f"Les {total} fichier(s) sont déjà dans les données brutes")
+        elif count == total:
+            self._show_toast(f"{count} fichier(s) ajouté(s) aux données brutes")
+        else:
+            self._show_toast(f"{count}/{total} fichier(s) ajouté(s) ({total - count} doublon(s))")
+
+    def _show_toast(self, message):
+        """Affiche un toast de confirmation via la vue."""
+        if hasattr(self.view, "quick_search_zone"):
+            self.view.schedule_gui_update(
+                lambda: self.view.quick_search_zone.show_toast(message)
+            )
 
     def get_indexing_status(self):
         """Retourne le statut de l'indexation."""
