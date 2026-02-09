@@ -22,8 +22,8 @@ _COLORS = {
     "danger": "#DC2626",
     "danger_hover": "#B91C1C",
     "success": "#16A34A",
-    "toggle_on": "#0115B8",
-    "toggle_off": "#D1D5DB",
+    "toggle_on": "#19CE1F",
+    "toggle_off": "#C8CBD0",
     "input_border": "#D1D5DB",
     "input_bg": "#FAFAFA",
     "divider": "#E5E7EB",
@@ -100,11 +100,11 @@ class _ToggleSettingCard(_SettingCard):
             self, variable=self._var, text="",
             onvalue=True, offvalue=False,
             progress_color=_COLORS["toggle_on"],
-            button_color=_COLORS["card"],
-            button_hover_color="#E0E0E0",
+            button_color="#E0E0E0",
+            button_hover_color="#BBBBBD",
             fg_color=_COLORS["toggle_off"],
-            switch_width=52, switch_height=28,
-            width=52, height=28,
+            switch_width=52, switch_height=26,
+            width=26, height=26,
             command=lambda: on_change(self._var.get())
         )
         self._switch.pack(side="right", padx=20)
