@@ -1,11 +1,159 @@
 import random
 import queue
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Callable
 from cpt_files_indexer import CPTFilesIndexer
 from settings_manager import SettingsManager
 import threading
 import os
 import sys
+import copy
+
+
+class RawDataManager:
+    """
+    Gestionnaire centralisé des fichiers GEF sélectionnés pour le traitement.
+
+    Thread-safe, fournit un mécanisme robuste d'ajout/suppression/consultation
+    des fichiers à traiter. Utilise le chemin absolu du fichier comme clé unique
+    pour éviter les doublons.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        # Dictionnaire indexé par file_path (clé unique) -> données complètes du fichier
+        self._files: Dict[str, Dict] = {}
+        # Ordre d'insertion pour maintenir un affichage cohérent
+        self._insertion_order: List[str] = []
+        # Callbacks de notification lors de changements
+        self._on_change_callbacks: List[Callable] = []
+
+    # ──────────────────────── Abonnement aux changements ────────────────────────
+
+    def subscribe(self, callback: Callable):
+        """Enregistre un callback appelé à chaque modification de la liste."""
+        with self._lock:
+            if callback not in self._on_change_callbacks:
+                self._on_change_callbacks.append(callback)
+
+    def unsubscribe(self, callback: Callable):
+        """Retire un callback de notification."""
+        with self._lock:
+            if callback in self._on_change_callbacks:
+                self._on_change_callbacks.remove(callback)
+
+    def _notify(self):
+        """Notifie tous les abonnés d'un changement (appelé sous le lock)."""
+        callbacks = list(self._on_change_callbacks)
+        for cb in callbacks:
+            try:
+                cb()
+            except Exception as e:
+                print(f"RawDataManager: erreur dans callback de notification: {e}")
+
+    # ──────────────────────── Ajout de fichiers ────────────────────────
+
+    def add_file(self, file_data: Dict) -> bool:
+        """
+        Ajoute un fichier à la liste des données brutes.
+
+        Args:
+            file_data: Dictionnaire contenant au minimum 'file_path' et 'file_name'.
+                       Les autres champs (Job Number, Date, etc.) sont conservés.
+
+        Returns:
+            True si le fichier a été ajouté, False s'il existait déjà.
+        """
+        file_path = file_data.get("file_path", "")
+        if not file_path:
+            return False
+
+        with self._lock:
+            if file_path in self._files:
+                return False
+            self._files[file_path] = copy.deepcopy(file_data)
+            self._insertion_order.append(file_path)
+            self._notify()
+            return True
+
+    def add_files(self, files_data: List[Dict]) -> int:
+        """
+        Ajoute plusieurs fichiers d'un coup.
+
+        Returns:
+            Nombre de fichiers effectivement ajoutés (hors doublons).
+        """
+        added = 0
+        with self._lock:
+            for file_data in files_data:
+                file_path = file_data.get("file_path", "")
+                if file_path and file_path not in self._files:
+                    self._files[file_path] = copy.deepcopy(file_data)
+                    self._insertion_order.append(file_path)
+                    added += 1
+            if added > 0:
+                self._notify()
+        return added
+
+    # ──────────────────────── Suppression de fichiers ────────────────────────
+
+    def remove_file(self, file_path: str) -> bool:
+        """Retire un fichier de la liste. Retourne True si trouvé et retiré."""
+        with self._lock:
+            if file_path in self._files:
+                del self._files[file_path]
+                self._insertion_order.remove(file_path)
+                self._notify()
+                return True
+            return False
+
+    def remove_files(self, file_paths: List[str]) -> int:
+        """Retire plusieurs fichiers. Retourne le nombre effectivement retiré."""
+        removed = 0
+        with self._lock:
+            for fp in file_paths:
+                if fp in self._files:
+                    del self._files[fp]
+                    self._insertion_order.remove(fp)
+                    removed += 1
+            if removed > 0:
+                self._notify()
+        return removed
+
+    def clear(self):
+        """Vide entièrement la liste des fichiers."""
+        with self._lock:
+            self._files.clear()
+            self._insertion_order.clear()
+            self._notify()
+
+    # ──────────────────────── Consultation ────────────────────────
+
+    def contains(self, file_path: str) -> bool:
+        """Vérifie si un fichier est déjà dans la liste."""
+        with self._lock:
+            return file_path in self._files
+
+    def get_all_files(self) -> List[Dict]:
+        """Retourne une copie de tous les fichiers dans l'ordre d'insertion."""
+        with self._lock:
+            return [copy.deepcopy(self._files[fp]) for fp in self._insertion_order if fp in self._files]
+
+    def get_file(self, file_path: str) -> Optional[Dict]:
+        """Retourne les données d'un fichier spécifique, ou None."""
+        with self._lock:
+            data = self._files.get(file_path)
+            return copy.deepcopy(data) if data else None
+
+    @property
+    def count(self) -> int:
+        """Nombre de fichiers actuellement sélectionnés."""
+        with self._lock:
+            return len(self._files)
+
+    def get_file_paths(self) -> List[str]:
+        """Retourne la liste des chemins de fichiers dans l'ordre d'insertion."""
+        with self._lock:
+            return list(self._insertion_order)
 
 def get_resource_path(relative_path):
     """Obtient le chemin vers les ressources, que ce soit en dev ou en exe."""
@@ -108,6 +256,9 @@ class AppModel:
 
         # Gestionnaire de réglages persistants
         self.settings_manager = SettingsManager()
+
+        # Gestionnaire des fichiers GEF sélectionnés pour traitement
+        self.raw_data_manager = RawDataManager()
 
         # Répertoires d'indexation lus depuis les réglages utilisateur
         self.cpt_root_directories = self._get_index_directories()

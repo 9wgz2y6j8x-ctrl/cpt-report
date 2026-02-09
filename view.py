@@ -63,6 +63,19 @@ class TopMenuView(ctk.CTkFrame):
         if self.presenter:
             self.presenter.on_workspace_selected(workspace_name)
 
+    def deselect_all(self):
+        """Désélectionne tous les boutons du segmented button.
+
+        Utilise la méthode interne de CTkSegmentedButton pour retirer
+        la sélection visuelle sans déclencher le callback.
+        """
+        try:
+            # CTkSegmentedButton n'a pas de méthode "deselect" native.
+            # On force la valeur courante à "" via la variable interne.
+            self.menu_action_buttons.set("")
+        except Exception:
+            pass
+
 
 class SideMenuView(ctk.CTkFrame):
     """
@@ -371,6 +384,9 @@ class FileSearchZoneView(ctk.CTkFrame):
 
         # Configuration du Treeview
         self._create_treeview()
+
+        # Boutons de sélection en bas du treeview
+        self._create_selection_buttons()
 
     def _create_group_by_date_zone(self):
         """Crée la zone d'affichage groupé par date."""
@@ -1069,6 +1085,8 @@ class FileSearchZoneView(ctk.CTkFrame):
         self.results_tree.bind("<<TreeviewSelect>>", self._on_treeview_select_styled)
         self.results_tree.bind("<Motion>", self._on_treeview_hover)
         self.results_tree.bind("<Leave>", self._on_treeview_leave)
+        self.results_tree.bind("<Double-1>", self._on_treeview_double_click)
+        self.results_tree.bind("<Button-3>", self._on_treeview_right_click)
 
     def _configure_modern_treeview_style(self):
         """Configure un style moderne pour le Treeview SANS bordures."""
@@ -1271,6 +1289,254 @@ class FileSearchZoneView(ctk.CTkFrame):
         if self.hovered_item:
             self._reset_item_style(self.hovered_item)
             self.hovered_item = None
+
+    # ──────────────────────── Double-clic & Menu contextuel ────────────────────────
+
+    def _get_result_data_for_item(self, item):
+        """Retrouve les données complètes d'un item du treeview."""
+        try:
+            item_data = self.results_tree.item(item)
+            file_display = item_data["text"]
+            if not file_display or any(s in file_display for s in ["Recherche", "Aucun résultat", "Indexation"]):
+                return None
+
+            file_name = file_display
+            if file_name.startswith("📈 "):
+                file_name = file_name[2:]
+            file_name = file_name.strip()
+
+            for result in self.current_results:
+                if result.get("file_name", "").strip() == file_name:
+                    return result
+
+            # Fallback : reconstruire depuis les valeurs du treeview
+            values = item_data.get("values", ())
+            if values:
+                return {
+                    "file_name": file_name,
+                    "file_path": "",
+                    "Job Number": values[0] if len(values) > 0 else "",
+                    "TestNumber": values[1] if len(values) > 1 else "",
+                    "Location": values[2] if len(values) > 2 else "",
+                    "Date": values[3] if len(values) > 3 else "",
+                    "Operator": values[4] if len(values) > 4 else "",
+                }
+            return None
+        except Exception:
+            return None
+
+    def _on_treeview_double_click(self, event):
+        """Double-clic sur une ligne : ajoute le fichier aux données brutes."""
+        item = self.results_tree.identify_row(event.y)
+        if not item:
+            return
+        result_data = self._get_result_data_for_item(item)
+        if result_data and self.presenter:
+            self.presenter.on_add_to_raw_data(result_data)
+
+    def _on_treeview_right_click(self, event):
+        """Clic droit : affiche le menu contextuel moderne."""
+        item = self.results_tree.identify_row(event.y)
+        if not item:
+            return
+
+        # Sélectionner l'item sous le curseur
+        self.results_tree.selection_set(item)
+
+        result_data = self._get_result_data_for_item(item)
+        if not result_data:
+            return
+
+        self._show_context_menu(event, result_data)
+
+    def _show_context_menu(self, event, result_data):
+        """Affiche un menu contextuel moderne (CTkFrame popup)."""
+        # Détruire un éventuel menu précédent
+        if hasattr(self, "_context_menu") and self._context_menu and self._context_menu.winfo_exists():
+            self._context_menu.destroy()
+
+        root = self.winfo_toplevel()
+
+        # Frame popup simulant un menu contextuel
+        menu_frame = ctk.CTkFrame(
+            root,
+            fg_color="#FFFFFF",
+            corner_radius=10,
+            border_width=1,
+            border_color="#D0D0D0",
+        )
+        self._context_menu = menu_frame
+
+        # Bouton "Ajouter aux données brutes"
+        add_btn = ctk.CTkButton(
+            menu_frame,
+            text="  Ajouter aux données brutes",
+            font=("Verdana", 14),
+            fg_color="transparent",
+            text_color="#1565C0",
+            hover_color="#E3F2FD",
+            anchor="w",
+            height=36,
+            corner_radius=6,
+            command=lambda: self._context_menu_add(result_data),
+        )
+        add_btn.pack(fill="x", padx=6, pady=(6, 3))
+
+        # Bouton "Ajouter la sélection"
+        sel = self.results_tree.selection()
+        if len(sel) > 1:
+            add_sel_btn = ctk.CTkButton(
+                menu_frame,
+                text=f"  Ajouter la sélection ({len(sel)} fichiers)",
+                font=("Verdana", 14),
+                fg_color="transparent",
+                text_color="#1565C0",
+                hover_color="#E3F2FD",
+                anchor="w",
+                height=36,
+                corner_radius=6,
+                command=lambda: self._context_menu_add_selection(),
+            )
+            add_sel_btn.pack(fill="x", padx=6, pady=(0, 6))
+        else:
+            # Petit padding en bas si un seul bouton
+            add_btn.pack_configure(pady=(6, 6))
+
+        # Positionner le menu près du curseur
+        menu_frame.place(x=event.x_root - root.winfo_rootx(),
+                         y=event.y_root - root.winfo_rooty())
+        menu_frame.lift()
+
+        # Fermer le menu au clic ailleurs
+        def _close_menu(e):
+            try:
+                if hasattr(self, "_context_menu") and self._context_menu and self._context_menu.winfo_exists():
+                    self._context_menu.destroy()
+            except Exception:
+                pass
+            root.unbind("<Button-1>", close_id)
+
+        close_id = root.bind("<Button-1>", _close_menu, add="+")
+
+    def _context_menu_add(self, result_data):
+        """Action du menu contextuel : ajouter un fichier."""
+        if hasattr(self, "_context_menu") and self._context_menu.winfo_exists():
+            self._context_menu.destroy()
+        if self.presenter:
+            self.presenter.on_add_to_raw_data(result_data)
+
+    def _context_menu_add_selection(self):
+        """Action du menu contextuel : ajouter toute la sélection."""
+        if hasattr(self, "_context_menu") and self._context_menu.winfo_exists():
+            self._context_menu.destroy()
+        self._add_current_selection_to_raw_data()
+
+    # ──────────────────────── Toast notification ────────────────────────
+
+    def show_toast(self, message, duration_ms=2000):
+        """Affiche un message de confirmation en surimpression (fond vert pastel, 2s)."""
+        root = self.winfo_toplevel()
+
+        toast = ctk.CTkFrame(
+            root,
+            fg_color="#C8E6C9",
+            corner_radius=12,
+            border_width=1,
+            border_color="#A5D6A7",
+        )
+        toast_label = ctk.CTkLabel(
+            toast,
+            text=message,
+            font=("Verdana", 14, "bold"),
+            text_color="#2E7D32",
+        )
+        toast_label.pack(padx=20, pady=10)
+
+        # Centré horizontalement, en haut de la zone de travail
+        toast.place(relx=0.5, rely=0.06, anchor="center")
+        toast.lift()
+
+        def _fade_out():
+            try:
+                if toast.winfo_exists():
+                    toast.destroy()
+            except Exception:
+                pass
+
+        root.after(duration_ms, _fade_out)
+
+    # ──────────────────────── Boutons sélection sous le treeview ────────────────────────
+
+    def _create_selection_buttons(self):
+        """Crée les boutons Sélectionner tout / Désélectionner / Ajouter la sélection."""
+        self.selection_bar = ctk.CTkFrame(self.list_display_frame, fg_color="transparent", height=38)
+        self.selection_bar.pack(fill="x", pady=(4, 0))
+
+        btn_style = {
+            "font": ("Verdana", 13),
+            "height": 32,
+            "corner_radius": 8,
+            "border_width": 1,
+        }
+
+        self.btn_select_all = ctk.CTkButton(
+            self.selection_bar,
+            text="Sélectionner tout",
+            fg_color="#F6FAFC",
+            text_color="#1565C0",
+            hover_color="#BBDEFB",
+            border_color="#90CAF9",
+            command=self._select_all_treeview,
+            **btn_style,
+        )
+        self.btn_select_all.pack(side="left", padx=(0, 6))
+
+        self.btn_deselect = ctk.CTkButton(
+            self.selection_bar,
+            text="Désélectionner",
+            fg_color="#F6FAFC",
+            text_color="#616161",
+            hover_color="#E0E0E0",
+            border_color="#BDBDBD",
+            command=self._deselect_all_treeview,
+            **btn_style,
+        )
+        self.btn_deselect.pack(side="left", padx=(0, 6))
+
+        self.btn_add_selection = ctk.CTkButton(
+            self.selection_bar,
+            text="Ajouter la sélection",
+            fg_color="#E3F2FD",
+            text_color="#0D47A1",
+            hover_color="#BBDEFB",
+            border_color="#64B5F6",
+            command=self._add_current_selection_to_raw_data,
+            **btn_style,
+        )
+        self.btn_add_selection.pack(side="left", padx=(0, 6))
+
+    def _select_all_treeview(self):
+        """Sélectionne tous les items du treeview."""
+        children = self.results_tree.get_children()
+        if children:
+            self.results_tree.selection_set(children)
+
+    def _deselect_all_treeview(self):
+        """Désélectionne tous les items du treeview."""
+        self.results_tree.selection_remove(*self.results_tree.selection())
+
+    def _add_current_selection_to_raw_data(self):
+        """Ajoute tous les fichiers actuellement sélectionnés dans le treeview."""
+        selection = self.results_tree.selection()
+        if not selection:
+            return
+        files = []
+        for item in selection:
+            rd = self._get_result_data_for_item(item)
+            if rd:
+                files.append(rd)
+        if files and self.presenter:
+            self.presenter.on_add_multiple_to_raw_data(files)
 
     def _reset_item_style(self, item):
         """Réinitialise le style d'un item à son état original."""
@@ -1508,6 +1774,258 @@ class FileSearchZoneView(ctk.CTkFrame):
     def focus_search_entry(self):
         """Met le focus sur le champ de recherche."""
         self.search_entry.focus_set()
+
+
+class RawDataWorkspaceView(ctk.CTkFrame):
+    """
+    Workspace « Données Brutes » : affiche la liste des fichiers GEF
+    sélectionnés par l'utilisateur pour traitement.
+    """
+
+    def __init__(self, parent, model, presenter, *args, **kwargs):
+        super().__init__(parent, fg_color="transparent", corner_radius=0, *args, **kwargs)
+        self.model = model
+        self.presenter = presenter
+        self._build_ui()
+
+        # S'abonner aux changements du RawDataManager
+        self.model.raw_data_manager.subscribe(self._on_data_changed)
+
+    # ──────────────────────── Construction UI ────────────────────────
+
+    def _build_ui(self):
+        """Construit toute l'interface du workspace données brutes."""
+        # ─── En-tête ───
+        header = ctk.CTkFrame(self, fg_color="#0115B8", corner_radius=0, height=52)
+        header.pack(fill="x")
+        header.pack_propagate(False)
+
+        self.title_label = ctk.CTkLabel(
+            header,
+            text="DONNÉES BRUTES — 0 fichier(s) sélectionné(s)",
+            font=("Verdana", 18, "bold"),
+            text_color="white",
+        )
+        self.title_label.pack(side="left", padx=20, pady=10)
+
+        # Bouton vider tout (à droite du header)
+        self.btn_clear = ctk.CTkButton(
+            header,
+            text="Tout retirer",
+            font=("Verdana", 13, "bold"),
+            fg_color="#C62828",
+            hover_color="#B71C1C",
+            text_color="white",
+            corner_radius=8,
+            width=120,
+            height=32,
+            command=self._on_clear_all,
+        )
+        self.btn_clear.pack(side="right", padx=20, pady=10)
+
+        # ─── Zone treeview ───
+        tree_container = ctk.CTkFrame(self, fg_color="white", corner_radius=8, border_width=1, border_color="#E0E0E0")
+        tree_container.pack(fill="both", expand=True, padx=20, pady=(15, 10))
+
+        # Configurer le style treeview pour données brutes
+        style = ttk.Style()
+        style.configure("RawData.Treeview",
+                        background="white",
+                        foreground="#2E2E2E",
+                        fieldbackground="white",
+                        font=("Verdana", 13),
+                        rowheight=32,
+                        borderwidth=0,
+                        relief="flat")
+        style.layout("RawData.Treeview", [
+            ('RawData.Treeview.treearea', {'sticky': 'nswe'})
+        ])
+
+        columns = ("dossier", "essai", "lieu", "date", "operateur")
+        self.tree = ttk.Treeview(
+            tree_container,
+            columns=columns,
+            show="headings",
+            selectmode="extended",
+            style="RawData.Treeview",
+        )
+
+        self.tree.heading("dossier", text="Dossier")
+        self.tree.heading("essai", text="Essai")
+        self.tree.heading("lieu", text="Lieu")
+        self.tree.heading("date", text="Date")
+        self.tree.heading("operateur", text="Opérateur")
+
+        self.tree.column("dossier", width=140, anchor="w")
+        self.tree.column("essai", width=80, anchor="w")
+        self.tree.column("lieu", width=200, anchor="w")
+        self.tree.column("date", width=110, anchor="w")
+        self.tree.column("operateur", width=120, anchor="w")
+
+        self.tree.tag_configure("oddrow", background="#F3F3F3")
+        self.tree.tag_configure("evenrow", background="white")
+
+        scrollbar = ttk.Scrollbar(tree_container, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+
+        self.tree.pack(side="left", fill="both", expand=True, padx=(5, 0), pady=5)
+        scrollbar.pack(side="right", fill="y", pady=5)
+
+        # Clic droit pour retirer un fichier
+        self.tree.bind("<Button-3>", self._on_right_click)
+        self.tree.bind("<Delete>", self._on_delete_key)
+
+        # ─── Barre d'actions en bas ───
+        actions_bar = ctk.CTkFrame(self, fg_color="transparent", height=42)
+        actions_bar.pack(fill="x", padx=20, pady=(0, 15))
+
+        btn_style = {
+            "font": ("Verdana", 13),
+            "height": 32,
+            "corner_radius": 8,
+            "border_width": 1,
+        }
+
+        self.btn_remove_sel = ctk.CTkButton(
+            actions_bar,
+            text="Retirer la sélection",
+            fg_color="#FFF3E0",
+            text_color="#E65100",
+            hover_color="#FFE0B2",
+            border_color="#FFB74D",
+            command=self._on_remove_selection,
+            **btn_style,
+        )
+        self.btn_remove_sel.pack(side="left", padx=(0, 8))
+
+        # Label info
+        self.info_label = ctk.CTkLabel(
+            actions_bar,
+            text="Double-cliquez ou utilisez le menu contextuel dans Recherche Rapide pour ajouter des fichiers.",
+            font=("Verdana", 12, "italic"),
+            text_color="#9E9E9E",
+        )
+        self.info_label.pack(side="left", padx=10)
+
+        # ─── Message si vide ───
+        self.empty_label = ctk.CTkLabel(
+            tree_container,
+            text="Aucun fichier sélectionné.\nUtilisez la Recherche Rapide pour ajouter des fichiers GEF.",
+            font=("Verdana", 16),
+            text_color="#BDBDBD",
+            justify="center",
+        )
+        # Sera affiché/masqué selon le contenu
+        self.empty_label.place(relx=0.5, rely=0.45, anchor="center")
+
+    # ──────────────────────── Mise à jour de l'affichage ────────────────────────
+
+    def _on_data_changed(self):
+        """Callback du RawDataManager : rafraîchit l'affichage."""
+        # Doit être exécuté dans le thread GUI
+        try:
+            self.after(0, self._refresh_display)
+        except Exception:
+            pass
+
+    def _refresh_display(self):
+        """Rafraîchit le treeview et le titre avec les données actuelles."""
+        files = self.model.raw_data_manager.get_all_files()
+        count = len(files)
+
+        # Titre
+        self.title_label.configure(text=f"DONNÉES BRUTES — {count} fichier(s) sélectionné(s)")
+
+        # Vider le treeview
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        if count == 0:
+            self.empty_label.lift()
+        else:
+            self.empty_label.lower()
+            for i, f in enumerate(files):
+                tag = "evenrow" if i % 2 == 0 else "oddrow"
+                self.tree.insert(
+                    "", "end",
+                    iid=f.get("file_path", str(i)),
+                    values=(
+                        f.get("Job Number", ""),
+                        f.get("TestNumber", ""),
+                        f.get("Location", ""),
+                        f.get("Date", ""),
+                        f.get("Operator", ""),
+                    ),
+                    tags=(tag,),
+                )
+
+    # ──────────────────────── Actions utilisateur ────────────────────────
+
+    def _on_clear_all(self):
+        """Vide la totalité des fichiers sélectionnés."""
+        if self.model.raw_data_manager.count == 0:
+            return
+        self.model.raw_data_manager.clear()
+
+    def _on_remove_selection(self):
+        """Retire les fichiers sélectionnés dans le treeview."""
+        sel = self.tree.selection()
+        if not sel:
+            return
+        paths = list(sel)  # iid = file_path
+        self.model.raw_data_manager.remove_files(paths)
+
+    def _on_delete_key(self, event):
+        """Touche Suppr : retire les fichiers sélectionnés."""
+        self._on_remove_selection()
+
+    def _on_right_click(self, event):
+        """Menu contextuel dans le workspace données brutes."""
+        item = self.tree.identify_row(event.y)
+        if not item:
+            return
+        self.tree.selection_set(item)
+
+        root = self.winfo_toplevel()
+        menu = ctk.CTkFrame(root, fg_color="#FFFFFF", corner_radius=10,
+                            border_width=1, border_color="#D0D0D0")
+
+        btn = ctk.CTkButton(
+            menu,
+            text="  Retirer ce fichier",
+            font=("Verdana", 14),
+            fg_color="transparent",
+            text_color="#C62828",
+            hover_color="#FFEBEE",
+            anchor="w",
+            height=36,
+            corner_radius=6,
+            command=lambda: self._ctx_remove(menu, item),
+        )
+        btn.pack(fill="x", padx=6, pady=6)
+
+        menu.place(x=event.x_root - root.winfo_rootx(),
+                   y=event.y_root - root.winfo_rooty())
+        menu.lift()
+
+        def _close(e):
+            try:
+                if menu.winfo_exists():
+                    menu.destroy()
+            except Exception:
+                pass
+            root.unbind("<Button-1>", cid)
+
+        cid = root.bind("<Button-1>", _close, add="+")
+
+    def _ctx_remove(self, menu, item):
+        """Retire le fichier via le menu contextuel."""
+        try:
+            if menu.winfo_exists():
+                menu.destroy()
+        except Exception:
+            pass
+        self.model.raw_data_manager.remove_file(item)
 
 
 class AppView(ctk.CTk):
@@ -1825,11 +2343,10 @@ class AppView(ctk.CTk):
 
     def create_workspaces(self, parent):
         """Crée les différents onglets/espaces de travail dans un dictionnaire."""
-        # Workspace 1 - DONNÉES BRUTES (maintenant vide)
-        workspace1 = ctk.CTkFrame(parent, fg_color="lightgray", corner_radius=0)
-        empty_label = ctk.CTkLabel(workspace1, text="Workspace DONNÉES BRUTES", 
-                                  font=("Arial", 24, "bold"), text_color="black")
-        empty_label.place(relx=0.5, rely=0.5, anchor="center")
+        # Workspace 1 - DONNÉES BRUTES
+        workspace1 = ctk.CTkFrame(parent, fg_color="#F2F2F2", corner_radius=0)
+        self.raw_data_view = RawDataWorkspaceView(workspace1, self.model, self.presenter)
+        self.raw_data_view.pack(fill="both", expand=True)
 
         # Workspace 2 : OBSERVATIONS
         workspace2 = ctk.CTkFrame(parent, fg_color="blue", corner_radius=0)
