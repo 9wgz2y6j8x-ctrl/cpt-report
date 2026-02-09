@@ -92,7 +92,7 @@ class _ToggleSettingCard(_SettingCard):
         ctk.CTkLabel(
             text_frame, text=description, font=_FONTS["param_desc"],
             text_color=_COLORS["label_secondary"], anchor="w",
-            wraplength=520
+            justify="left", wraplength=520
         ).pack(anchor="w", pady=(2, 0))
 
         self._var = ctk.BooleanVar(value=initial_value)
@@ -103,7 +103,8 @@ class _ToggleSettingCard(_SettingCard):
             button_color=_COLORS["card"],
             button_hover_color="#E0E0E0",
             fg_color=_COLORS["toggle_off"],
-            width=50, height=26,
+            switch_width=52, switch_height=28,
+            width=52, height=28,
             command=lambda: on_change(self._var.get())
         )
         self._switch.pack(side="right", padx=20)
@@ -132,7 +133,7 @@ class _PathSettingCard(_SettingCard):
         ctk.CTkLabel(
             text_frame, text=description, font=_FONTS["param_desc"],
             text_color=_COLORS["label_secondary"], anchor="w",
-            wraplength=600
+            justify="left", wraplength=600
         ).pack(anchor="w", pady=(2, 0))
 
         row_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -189,7 +190,7 @@ class _ComboSettingCard(_SettingCard):
         ctk.CTkLabel(
             text_frame, text=description, font=_FONTS["param_desc"],
             text_color=_COLORS["label_secondary"], anchor="w",
-            wraplength=520
+            justify="left", wraplength=520
         ).pack(anchor="w", pady=(2, 0))
 
         str_values = [str(v) for v in values]
@@ -215,6 +216,8 @@ class _MachineCard(ctk.CTkFrame):
     """Carte affichant / éditant une machine CPT."""
 
     _CAPACITY_RANGE = (5, 30)
+    _WEIGHT_RANGE = (0, 20)
+    _NAME_MAX_LENGTH = 30
     _NB_TUBES_VALUES = ["0", "1", "2", "3"]
 
     def __init__(self, parent, machine_data: Dict[str, Any],
@@ -380,9 +383,10 @@ class _MachineCard(ctk.CTkFrame):
 
     def _collect_data(self) -> Optional[Dict[str, Any]]:
         try:
-            nom = self._field_widgets["nom"][0].get().strip()
+            nom = " ".join(self._field_widgets["nom"][0].get().split())
             if not nom:
                 nom = "Machine sans nom"
+            nom = nom[:self._NAME_MAX_LENGTH]
 
             capacite_str = self._field_widgets["capacite_tonnes"][0].get().strip()
             capacite = float(capacite_str)
@@ -392,12 +396,24 @@ class _MachineCard(ctk.CTkFrame):
             poids_tube = float(
                 self._field_widgets["poids_tube_penetration"][0].get().strip() or "0"
             )
+            poids_tube = max(self._WEIGHT_RANGE[0],
+                             min(self._WEIGHT_RANGE[1], poids_tube))
+
             poids_tige = float(
                 self._field_widgets["poids_tige_interieure"][0].get().strip() or "0"
             )
+            poids_tige = max(self._WEIGHT_RANGE[0],
+                             min(self._WEIGHT_RANGE[1], poids_tige))
+
             nb_tubes = int(
                 self._field_widgets["nb_tubes_avant_sol"][0].get().strip() or "0"
             )
+
+            # Update displayed values to reflect clamped values
+            self._field_widgets["nom"][0].set(nom)
+            self._field_widgets["capacite_tonnes"][0].set(str(capacite))
+            self._field_widgets["poids_tube_penetration"][0].set(str(poids_tube))
+            self._field_widgets["poids_tige_interieure"][0].set(str(poids_tige))
 
             return {
                 "nom": nom,
@@ -599,9 +615,11 @@ class SettingsView(ctk.CTkFrame):
         add_frame.pack(fill="x", pady=(12, 0))
 
         ctk.CTkButton(
-            add_frame, text="+ Ajouter une machine", font=_FONTS["button"],
-            fg_color=_COLORS["accent"], hover_color=_COLORS["accent_hover"],
-            text_color="white", corner_radius=8, height=38, width=220,
+            add_frame, text="+ Ajouter une machine", font=_FONTS["button_sm"],
+            fg_color="transparent", hover_color="#E0E4F0",
+            text_color=_COLORS["accent"], border_width=1,
+            border_color=_COLORS["accent"],
+            corner_radius=8, height=34, width=200,
             command=self._add_machine
         ).pack(anchor="w")
 
