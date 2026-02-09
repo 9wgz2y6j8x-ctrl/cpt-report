@@ -1586,7 +1586,7 @@ class FileSearchZoneView(ctk.CTkFrame):
             # S'assurer qu'il a son tag original si ce n'est pas un item spécial
             item_text = self.results_tree.item(item)['text']
             if not any(special in item_text for special in ['🔍 Recherche', 'Aucun résultat', 'Indexation']):
-                if 'evenrow' not in current_tags and 'oddrow' not in current_tags and 'selected' not in current_tags:
+                if 'evenrow' not in current_tags and 'oddrow' not in current_tags and 'selected' not in current_tags and 'in_raw_data' not in current_tags:
                     # Recalculer le tag original basé sur l'index
                     try:
                         index = self.results_tree.index(item)
