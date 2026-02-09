@@ -2,6 +2,7 @@ import random
 import queue
 from typing import List, Dict, Optional
 from cpt_files_indexer import CPTFilesIndexer
+from settings_manager import SettingsManager
 import threading
 import os
 import sys
@@ -105,6 +106,9 @@ class AppModel:
 
         # NOUVEAU : Queue thread-safe pour les mises à jour GUI
         self.gui_update_queue = queue.Queue()
+
+        # Gestionnaire de réglages persistants
+        self.settings_manager = SettingsManager()
 
     def initialize_indexer(self):
         """Initialise l'indexeur CPT."""
