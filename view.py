@@ -1295,12 +1295,13 @@ class FileSearchZoneView(ctk.CTkFrame):
             if self.hovered_item:
                 self._reset_item_style(self.hovered_item)
             
-            # Appliquer hover sur le nouvel item
+            # Appliquer hover sur le nouvel item (sauf si déjà dans données brutes)
             if item:
                 current_tags = list(self.results_tree.item(item)['tags'])
-                if 'hover' not in current_tags:
-                    current_tags.append('hover')
-                self.results_tree.item(item, tags=current_tags)
+                if 'in_raw_data' not in current_tags:
+                    if 'hover' not in current_tags:
+                        current_tags.append('hover')
+                    self.results_tree.item(item, tags=current_tags)
                 self.hovered_item = item
 
     def _on_treeview_leave(self, event):
