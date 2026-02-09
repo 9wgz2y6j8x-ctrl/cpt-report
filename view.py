@@ -4,7 +4,8 @@ from PIL import Image, ImageDraw, ImageTk
 import os
 import tkinter as tk
 import threading
-from model import get_resource_path 
+from model import get_resource_path
+from settings_view import SettingsView
 
 
 class TopMenuView(ctk.CTkFrame):
@@ -1846,8 +1847,15 @@ class AppView(ctk.CTk):
         workspace_quick_search = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=0)
         self.quick_search_zone = FileSearchZoneView(workspace_quick_search, self.model, self.presenter)
 
-        # Workspace 5 : PREFERENCES
-        workspace5 = ctk.CTkFrame(parent, fg_color="purple", corner_radius=0)
+        # Workspace 5 : PREFERENCES (Réglages)
+        workspace5 = ctk.CTkFrame(parent, fg_color="#F2F2F2", corner_radius=0)
+        on_changed = self.presenter.on_settings_changed if self.presenter else None
+        self.settings_view = SettingsView(
+            workspace5,
+            settings_manager=self.model.settings_manager,
+            on_settings_changed=on_changed
+        )
+        self.settings_view.pack(fill="both", expand=True)
 
         # Dictionnaire des workspaces
         self.workspaces = {
