@@ -101,7 +101,6 @@ class AppModel:
         }
 
         # Configuration pour l'indexation
-        self.cpt_root_directory = r"Z:\Geotechnique\Résultats\V2 RESULTAT BRUT\2026"
         self.cpt_cache_file = "cpt_index_cache.json"
 
         # NOUVEAU : Queue thread-safe pour les mises à jour GUI
@@ -110,10 +109,43 @@ class AppModel:
         # Gestionnaire de réglages persistants
         self.settings_manager = SettingsManager()
 
+        # Répertoires d'indexation lus depuis les réglages utilisateur
+        self.cpt_root_directories = self._get_index_directories()
+
+    def _get_index_directories(self) -> list:
+        """
+        Lit les répertoires d'indexation depuis les réglages utilisateur.
+        Retourne une liste de chemins valides (non vides).
+        """
+        directories = []
+        for key in ("emplacement_gef", "emplacement_gef_secondaire"):
+            path = self.settings_manager.get("dossiers_travail", key)
+            if path and path.strip():
+                directories.append(path.strip())
+        return directories
+
+    @property
+    def cpt_root_directory(self) -> str:
+        """Rétro-compatibilité : retourne le premier répertoire configuré."""
+        return self.cpt_root_directories[0] if self.cpt_root_directories else ""
+
+    @cpt_root_directory.setter
+    def cpt_root_directory(self, value: str):
+        """Rétro-compatibilité : met à jour le premier répertoire."""
+        if self.cpt_root_directories:
+            self.cpt_root_directories[0] = value
+        elif value and value.strip():
+            self.cpt_root_directories = [value]
+
     def initialize_indexer(self):
-        """Initialise l'indexeur CPT."""
+        """Initialise l'indexeur CPT avec les répertoires des réglages."""
+        self.cpt_root_directories = self._get_index_directories()
+        if not self.cpt_root_directories:
+            print("Attention: Aucun répertoire d'indexation configuré dans les réglages.")
+            self.cpt_indexer = None
+            return
         self.cpt_indexer = CPTFilesIndexer(
-            root_directory=self.cpt_root_directory,
+            root_directories=self.cpt_root_directories,
             cache_file=self.cpt_cache_file
         )
 
@@ -121,6 +153,12 @@ class AppModel:
         """Lance l'indexation en arrière-plan avec progression réelle."""
         if not self.cpt_indexer:
             self.initialize_indexer()
+        if not self.cpt_indexer:
+            # Aucun répertoire configuré, signaler sans erreur
+            self.gui_update_queue.put(("indexing_error",
+                "Aucun répertoire d'essais configuré. "
+                "Veuillez définir un emplacement dans les Préférences."))
+            return
 
         def progress_callback(current, total):
             """Callback appelé pour chaque fichier traité."""

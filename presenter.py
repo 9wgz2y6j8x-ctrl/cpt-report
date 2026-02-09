@@ -26,11 +26,13 @@ class AppPresenter:
 
     def on_settings_changed(self):
         """Callback déclenché quand un réglage est modifié dans la vue."""
-        gef_path = self.model.settings_manager.get(
-            "dossiers_travail", "emplacement_gef"
-        )
-        if gef_path and gef_path != self.model.cpt_root_directory:
-            self.model.cpt_root_directory = gef_path
+        new_dirs = self.model._get_index_directories()
+        if new_dirs != self.model.cpt_root_directories:
+            self.model.cpt_root_directories = new_dirs
+            # Réinitialiser l'indexeur et relancer l'indexation
+            self.model.initialize_indexer()
+            if self.model.cpt_indexer:
+                self.model.start_background_indexing()
 
     def on_search_text_changed(self, search_text):
         """Gère le changement du texte de recherche avec recherche CPT."""
