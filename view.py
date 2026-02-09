@@ -246,22 +246,6 @@ class FileSearchZoneView(ctk.CTkFrame):
         
         # Variable pour le mode d'affichage actuel
         self.current_display_mode = "list"  # "list", "group_by_date", "group_by_folder", "group_by_location"
-
-        # S'abonner aux changements du RawDataManager pour rafraîchir les indicateurs visuels
-        if hasattr(self.model, "raw_data_manager"):
-            self.model.raw_data_manager.subscribe(self._on_raw_data_changed)
-
-    def _on_raw_data_changed(self):
-        """Rafraîchit le treeview pour mettre à jour le fond vert des fichiers déjà ajoutés."""
-        try:
-            self.after(0, self._refresh_treeview_display_if_visible)
-        except Exception:
-            pass
-
-    def _refresh_treeview_display_if_visible(self):
-        """Rafraîchit le treeview uniquement si on est en mode liste avec des résultats."""
-        if self.current_display_mode == "list" and self.current_results and hasattr(self, "results_tree"):
-            self._refresh_treeview_display()
         
         # Configuration des colonnes
         self.columns_config = [
@@ -1185,14 +1169,10 @@ class FileSearchZoneView(ctk.CTkFrame):
                                        background="#E3F2FD",
                                        foreground="#2196F3", 
                                        font=("Arial", 14, "bold"))
-        self.results_tree.tag_configure('no_results',
-                                       background="#FFF3CD",
+        self.results_tree.tag_configure('no_results', 
+                                       background="#FFF3CD", 
                                        foreground="#856404",
                                        font=("Arial", 12, "italic"))
-        self.results_tree.tag_configure('in_raw_data',
-                                       background="#C8E6C9",
-                                       foreground="#2E7D32",
-                                       font=("Verdana", 12))
 
     def _on_header_click(self, column_key):
         """Gère le clic sur un en-tête pour trier la colonne (seulement en mode liste)."""
@@ -1251,29 +1231,20 @@ class FileSearchZoneView(ctk.CTkFrame):
         # Effacer le contenu actuel
         for item in self.results_tree.get_children():
             self.results_tree.delete(item)
-
-        # Référence au RawDataManager pour colorer les fichiers déjà ajoutés
-        raw_mgr = self.model.raw_data_manager if hasattr(self.model, "raw_data_manager") else None
-
+        
         # Réafficher les résultats triés
         for i, result in enumerate(self.current_results):
-            file_path = result.get("file_path", "")
-            is_in_raw = raw_mgr.contains(file_path) if raw_mgr and file_path else False
-
-            if is_in_raw:
-                tag = "in_raw_data"
-            else:
-                tag = "evenrow" if i % 2 == 0 else "oddrow"
-
+            tag = 'evenrow' if i % 2 == 0 else 'oddrow'
+            
             file_display = f"📈 {result.get('file_name', 'N/A')}"
-
+            
             self.results_tree.insert(
                 "",
                 "end",
                 text=file_display,
                 values=(
                     result.get('Job Number', 'N/A'),
-                    result.get('TestNumber', 'N/A'),
+                    result.get('TestNumber', 'N/A'), 
                     result.get('Location', 'N/A'),
                     result.get('Date', 'N/A'),
                     result.get('Operator', 'N/A')
@@ -1390,7 +1361,7 @@ class FileSearchZoneView(ctk.CTkFrame):
         menu_frame = ctk.CTkFrame(
             root,
             fg_color="#FFFFFF",
-            corner_radius=0,
+            corner_radius=10,
             border_width=1,
             border_color="#D0D0D0",
         )
@@ -1406,10 +1377,10 @@ class FileSearchZoneView(ctk.CTkFrame):
             hover_color="#E3F2FD",
             anchor="w",
             height=36,
-            corner_radius=0,
+            corner_radius=6,
             command=lambda: self._context_menu_add(result_data),
         )
-        add_btn.pack(fill="x", padx=4, pady=(4, 2))
+        add_btn.pack(fill="x", padx=6, pady=(6, 3))
 
         # Bouton "Ajouter la sélection"
         sel = self.results_tree.selection()
@@ -1423,13 +1394,13 @@ class FileSearchZoneView(ctk.CTkFrame):
                 hover_color="#E3F2FD",
                 anchor="w",
                 height=36,
-                corner_radius=0,
+                corner_radius=6,
                 command=lambda: self._context_menu_add_selection(),
             )
-            add_sel_btn.pack(fill="x", padx=4, pady=(0, 4))
+            add_sel_btn.pack(fill="x", padx=6, pady=(0, 6))
         else:
             # Petit padding en bas si un seul bouton
-            add_btn.pack_configure(pady=(4, 4))
+            add_btn.pack_configure(pady=(6, 6))
 
         # Positionner le menu près du curseur
         menu_frame.place(x=event.x_root - root.winfo_rootx(),
@@ -1463,14 +1434,13 @@ class FileSearchZoneView(ctk.CTkFrame):
     # ──────────────────────── Toast notification ────────────────────────
 
     def show_toast(self, message, duration_ms=2000):
-        """Affiche un message de confirmation en surimpression sur le treeview (fond vert pastel, 2s)."""
-        # Positionner le toast au-dessus du treeview, centré dans le tiers inférieur
-        anchor_widget = self.treeview_frame if hasattr(self, "treeview_frame") else self
+        """Affiche un message de confirmation en surimpression (fond vert pastel, 2s)."""
+        root = self.winfo_toplevel()
 
         toast = ctk.CTkFrame(
-            anchor_widget,
+            root,
             fg_color="#C8E6C9",
-            corner_radius=0,
+            corner_radius=12,
             border_width=1,
             border_color="#A5D6A7",
         )
@@ -1482,8 +1452,8 @@ class FileSearchZoneView(ctk.CTkFrame):
         )
         toast_label.pack(padx=20, pady=10)
 
-        # Centré horizontalement, dans le tiers le plus bas du treeview
-        toast.place(relx=0.5, rely=0.80, anchor="center")
+        # Centré horizontalement, en haut de la zone de travail
+        toast.place(relx=0.5, rely=0.06, anchor="center")
         toast.lift()
 
         def _fade_out():
@@ -1493,61 +1463,57 @@ class FileSearchZoneView(ctk.CTkFrame):
             except Exception:
                 pass
 
-        anchor_widget.after(duration_ms, _fade_out)
+        root.after(duration_ms, _fade_out)
 
     # ──────────────────────── Boutons sélection sous le treeview ────────────────────────
 
     def _create_selection_buttons(self):
-        """Crée les boutons Sélectionner tout / Désélectionner / Ajouter la sélection.
-        Style aligné sur les boutons de settings_view (accent bleu, bold, corner_radius=6).
-        """
+        """Crée les boutons Sélectionner tout / Désélectionner / Ajouter la sélection."""
         self.selection_bar = ctk.CTkFrame(self.list_display_frame, fg_color="transparent", height=38)
-        self.selection_bar.pack(fill="x", pady=(6, 0))
-
-        # Frame interne centrée
-        inner = ctk.CTkFrame(self.selection_bar, fg_color="transparent")
-        inner.pack(anchor="center")
+        self.selection_bar.pack(fill="x", pady=(4, 0))
 
         btn_style = {
-            "font": ("Verdana", 13, "bold"),
-            "height": 30,
-            "corner_radius": 6,
-            "border_width": 0,
-            "width": 170,
+            "font": ("Verdana", 13),
+            "height": 32,
+            "corner_radius": 8,
+            "border_width": 1,
         }
 
         self.btn_select_all = ctk.CTkButton(
-            inner,
+            self.selection_bar,
             text="Sélectionner tout",
-            fg_color="#0115B8",
-            text_color="white",
-            hover_color="#0030E0",
+            fg_color="#F6FAFC",
+            text_color="#1565C0",
+            hover_color="#BBDEFB",
+            border_color="#90CAF9",
             command=self._select_all_treeview,
             **btn_style,
         )
-        self.btn_select_all.pack(side="left", padx=(0, 8))
+        self.btn_select_all.pack(side="left", padx=(0, 6))
 
         self.btn_deselect = ctk.CTkButton(
-            inner,
+            self.selection_bar,
             text="Désélectionner",
-            fg_color="#DC2626",
-            text_color="white",
-            hover_color="#B91C1C",
+            fg_color="#F6FAFC",
+            text_color="#616161",
+            hover_color="#E0E0E0",
+            border_color="#BDBDBD",
             command=self._deselect_all_treeview,
             **btn_style,
         )
-        self.btn_deselect.pack(side="left", padx=(0, 8))
+        self.btn_deselect.pack(side="left", padx=(0, 6))
 
         self.btn_add_selection = ctk.CTkButton(
-            inner,
+            self.selection_bar,
             text="Ajouter la sélection",
-            fg_color="#0115B8",
-            text_color="white",
-            hover_color="#0030E0",
+            fg_color="#E3F2FD",
+            text_color="#0D47A1",
+            hover_color="#BBDEFB",
+            border_color="#64B5F6",
             command=self._add_current_selection_to_raw_data,
             **btn_style,
         )
-        self.btn_add_selection.pack(side="left")
+        self.btn_add_selection.pack(side="left", padx=(0, 6))
 
     def _select_all_treeview(self):
         """Sélectionne tous les items du treeview."""
@@ -1857,76 +1823,53 @@ class RawDataWorkspaceView(ctk.CTkFrame):
         )
         self.btn_clear.pack(side="right", padx=20, pady=10)
 
-        # ─── Zone treeview (même style que le treeview de recherche) ───
-        tree_outer = ctk.CTkFrame(self, fg_color="transparent")
-        tree_outer.pack(fill="both", expand=True, padx=20, pady=(10, 10))
+        # ─── Zone treeview ───
+        tree_container = ctk.CTkFrame(self, fg_color="white", corner_radius=8, border_width=1, border_color="#E0E0E0")
+        tree_container.pack(fill="both", expand=True, padx=20, pady=(15, 10))
 
-        # En-têtes personnalisés (mêmes que le treeview de recherche)
-        self._raw_columns = [
-            {"text": "📁 Fichier", "key": "#0", "weight": 2},
-            {"text": "📋 Dossier", "key": "dossier", "weight": 1},
-            {"text": "🔬 Essai", "key": "essai", "weight": 1},
-            {"text": "📍 Lieu", "key": "lieu", "weight": 2},
-            {"text": "📅 Date", "key": "date", "weight": 1},
-            {"text": "👤 Opérateur", "key": "operateur", "weight": 1},
-        ]
+        # Configurer le style treeview pour données brutes
+        style = ttk.Style()
+        style.configure("RawData.Treeview",
+                        background="white",
+                        foreground="#2E2E2E",
+                        fieldbackground="white",
+                        font=("Verdana", 13),
+                        rowheight=32,
+                        borderwidth=0,
+                        relief="flat")
+        style.layout("RawData.Treeview", [
+            ('RawData.Treeview.treearea', {'sticky': 'nswe'})
+        ])
 
-        headers_container = ctk.CTkFrame(tree_outer, fg_color="dark blue", corner_radius=8, height=34)
-        headers_container.pack(fill="x", padx=5, pady=(0, 2))
-        headers_container.grid_propagate(False)
-        for i, col in enumerate(self._raw_columns):
-            headers_container.grid_columnconfigure(i, weight=col["weight"])
-            ctk.CTkButton(
-                headers_container,
-                text=col["text"],
-                font=("Verdana", 16, "bold"),
-                text_color="white",
-                fg_color="transparent",
-                hover_color="#1976D2",
-                corner_radius=10,
-                border_width=0,
-            ).grid(row=0, column=i, sticky="ew", padx=8, pady=3)
-
-        # Treeview container
-        tree_container = ctk.CTkFrame(tree_outer, fg_color="transparent")
-        tree_container.pack(fill="both", expand=True)
-        tree_container.grid_rowconfigure(0, weight=1)
-        tree_container.grid_columnconfigure(0, weight=1)
-
-        # Réutiliser le style Modern.Treeview déjà défini
         columns = ("dossier", "essai", "lieu", "date", "operateur")
         self.tree = ttk.Treeview(
             tree_container,
             columns=columns,
-            show="tree",
+            show="headings",
             selectmode="extended",
-            style="Modern.Treeview",
+            style="RawData.Treeview",
         )
 
-        self.tree.column("#0", width=200, minwidth=150, anchor="w")
-        self.tree.column("dossier", width=120, minwidth=80, anchor="w")
-        self.tree.column("essai", width=80, minwidth=60, anchor="w")
-        self.tree.column("lieu", width=180, minwidth=120, anchor="w")
-        self.tree.column("date", width=120, minwidth=80, anchor="w")
-        self.tree.column("operateur", width=120, minwidth=80, anchor="w")
+        self.tree.heading("dossier", text="Dossier")
+        self.tree.heading("essai", text="Essai")
+        self.tree.heading("lieu", text="Lieu")
+        self.tree.heading("date", text="Date")
+        self.tree.heading("operateur", text="Opérateur")
 
-        self.tree.tag_configure("oddrow",
-                                background="#F3F3F3", foreground="#2E2E2E",
-                                font=("Verdana", 12))
-        self.tree.tag_configure("evenrow",
-                                background="white", foreground="#2E2E2E",
-                                font=("Verdana", 12))
+        self.tree.column("dossier", width=140, anchor="w")
+        self.tree.column("essai", width=80, anchor="w")
+        self.tree.column("lieu", width=200, anchor="w")
+        self.tree.column("date", width=110, anchor="w")
+        self.tree.column("operateur", width=120, anchor="w")
 
-        # Scrollbars
-        v_scroll = ttk.Scrollbar(tree_container, orient="vertical",
-                                 command=self.tree.yview,
-                                 style="Modern.Vertical.TScrollbar")
-        self.tree.configure(yscrollcommand=v_scroll.set)
+        self.tree.tag_configure("oddrow", background="#F3F3F3")
+        self.tree.tag_configure("evenrow", background="white")
 
-        self.tree.grid(row=0, column=0, sticky="nsew")
-        v_scroll.grid(row=0, column=1, sticky="ns")
+        scrollbar = ttk.Scrollbar(tree_container, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
 
-        self._tree_container = tree_container
+        self.tree.pack(side="left", fill="both", expand=True, padx=(5, 0), pady=5)
+        scrollbar.pack(side="right", fill="y", pady=5)
 
         # Clic droit pour retirer un fichier
         self.tree.bind("<Button-3>", self._on_right_click)
@@ -1966,7 +1909,7 @@ class RawDataWorkspaceView(ctk.CTkFrame):
 
         # ─── Message si vide ───
         self.empty_label = ctk.CTkLabel(
-            self._tree_container,
+            tree_container,
             text="Aucun fichier sélectionné.\nUtilisez la Recherche Rapide pour ajouter des fichiers GEF.",
             font=("Verdana", 16),
             text_color="#BDBDBD",
@@ -2003,11 +1946,9 @@ class RawDataWorkspaceView(ctk.CTkFrame):
             self.empty_label.lower()
             for i, f in enumerate(files):
                 tag = "evenrow" if i % 2 == 0 else "oddrow"
-                file_display = f"📈 {f.get('file_name', 'N/A')}"
                 self.tree.insert(
                     "", "end",
                     iid=f.get("file_path", str(i)),
-                    text=file_display,
                     values=(
                         f.get("Job Number", ""),
                         f.get("TestNumber", ""),
@@ -2046,7 +1987,7 @@ class RawDataWorkspaceView(ctk.CTkFrame):
         self.tree.selection_set(item)
 
         root = self.winfo_toplevel()
-        menu = ctk.CTkFrame(root, fg_color="#FFFFFF", corner_radius=0,
+        menu = ctk.CTkFrame(root, fg_color="#FFFFFF", corner_radius=10,
                             border_width=1, border_color="#D0D0D0")
 
         btn = ctk.CTkButton(
@@ -2058,10 +1999,10 @@ class RawDataWorkspaceView(ctk.CTkFrame):
             hover_color="#FFEBEE",
             anchor="w",
             height=36,
-            corner_radius=0,
+            corner_radius=6,
             command=lambda: self._ctx_remove(menu, item),
         )
-        btn.pack(fill="x", padx=4, pady=4)
+        btn.pack(fill="x", padx=6, pady=6)
 
         menu.place(x=event.x_root - root.winfo_rootx(),
                    y=event.y_root - root.winfo_rooty())
