@@ -13,15 +13,23 @@ class CPTFilesIndexer:
     Indexeur optimisé pour les fichiers CPT (.000).
     Utilise une vérification par hash MD5 systématique, sauf si cache récent (< 60 secondes).
     Gère l'indexation, la mise en cache et la recherche dans les fichiers.
+    Supporte un ou plusieurs répertoires racines.
     """
-    
-    def __init__(self, root_directory: str, cache_file: str = "cpt_index_cache.json"):
-        self.root_directory = root_directory
+
+    def __init__(self, root_directories: List[str], cache_file: str = "cpt_index_cache.json"):
+        # Normaliser en liste et filtrer les chemins vides
+        if isinstance(root_directories, str):
+            root_directories = [root_directories]
+        self.root_directories = [d for d in root_directories if d and d.strip()]
+
+        # Rétro-compatibilité : propriété root_directory pointe vers le premier
+        self.root_directory = self.root_directories[0] if self.root_directories else ""
+
         self.cache_file = cache_file
         self.required_keys = ["Job Number", "Date", "Location", "TestNumber", "Operator"]
         self.indexed_data = []
         self._cache_metadata = {}
-        
+
         # Cache temporaire très court pour éviter les recalculs immédiats
         self._last_hash = None
         self._last_hash_time = 0
@@ -52,34 +60,35 @@ class CPTFilesIndexer:
         """
         Version optimisée du parcours de fichiers SANS compromis sur la fiabilité.
         Améliore les performances tout en gardant une détection 100% fiable.
+        Parcourt tous les répertoires racines configurés.
         """
         file_paths = []
-        
-        if not os.path.exists(self.root_directory):
-            return file_paths
-        
-        try:
-            # Parcours optimisé avec filtrage précoce (seulement optimisations sûres)
-            for root, dirs, files in os.walk(self.root_directory):
-                # Filtrage précoce des dossiers système (ne compromet pas la détection)
-                dirs[:] = [d for d in dirs if not d.startswith('.') and not d.startswith('__')]
-                
-                # Traitement batch optimisé
-                target_files = [
-                    os.path.join(root, f) 
-                    for f in files 
-                    if f.lower().endswith(".000")
-                ]
-                
-                # Extension efficace de liste
-                if target_files:
-                    file_paths.extend(target_files)
-                    
-        except (OSError, PermissionError) as e:
-            # Gestion d'erreurs gracieuse
-            print(f"Attention: Erreur d'accès lors du parcours : {e}")
-            print("Continuant avec les fichiers trouvés jusqu'à présent...")
-        
+
+        for directory in self.root_directories:
+            if not os.path.exists(directory):
+                print(f"Attention: Répertoire introuvable, ignoré : {directory}")
+                continue
+
+            try:
+                for root, dirs, files in os.walk(directory):
+                    # Filtrage précoce des dossiers système (ne compromet pas la détection)
+                    dirs[:] = [d for d in dirs if not d.startswith('.') and not d.startswith('__')]
+
+                    # Traitement batch optimisé
+                    target_files = [
+                        os.path.join(root, f)
+                        for f in files
+                        if f.lower().endswith(".000")
+                    ]
+
+                    # Extension efficace de liste
+                    if target_files:
+                        file_paths.extend(target_files)
+
+            except (OSError, PermissionError) as e:
+                print(f"Attention: Erreur d'accès lors du parcours de '{directory}' : {e}")
+                print("Continuant avec les fichiers trouvés jusqu'à présent...")
+
         return file_paths
 
     def get_directory_hash(self) -> str:
@@ -121,10 +130,14 @@ class CPTFilesIndexer:
             print("DEBUG: Pas de métadonnées de cache")
             return False
 
-        # Vérifier que le répertoire correspond
-        cached_directory = self._cache_metadata.get("root_directory")
-        if cached_directory != self.root_directory:
-            print(f"DEBUG: Répertoire différent - Cache: '{cached_directory}' vs Actuel: '{self.root_directory}'")
+        # Vérifier que les répertoires correspondent
+        cached_directories = self._cache_metadata.get("root_directories")
+        if cached_directories is None:
+            # Rétro-compatibilité avec l'ancien format mono-répertoire
+            cached_directory = self._cache_metadata.get("root_directory")
+            cached_directories = [cached_directory] if cached_directory else []
+        if sorted(cached_directories) != sorted(self.root_directories):
+            print(f"DEBUG: Répertoires différents - Cache: {cached_directories} vs Actuel: {self.root_directories}")
             return False
 
         # NOUVEAU : Exception pour cache récent (< 60 secondes)
@@ -227,11 +240,12 @@ class CPTFilesIndexer:
             cache_data = {
                 "metadata": {
                     "last_update": datetime.now().isoformat(),
-                    "directory_hash": self.get_directory_hash(),  # Maintenant c'est le bon hash
+                    "directory_hash": self.get_directory_hash(),
                     "total_files": len(self.indexed_data),
-                    "root_directory": self.root_directory,
+                    "root_directories": self.root_directories,
+                    "root_directory": self.root_directory,  # Rétro-compatibilité
                     "validation_method": "hash_md5_with_age_exception",
-                    "cache_version": "3.0"
+                    "cache_version": "3.1"
                 },
                 "data": self.indexed_data
             }
@@ -460,7 +474,8 @@ class CPTFilesIndexer:
         stats = {
             "total_files": len(self.indexed_data),
             "last_update": self._cache_metadata.get("last_update"),
-            "directory": self.root_directory,
+            "directories": self.root_directories,
+            "directory": self.root_directory,  # Rétro-compatibilité
             "validation_method": self._cache_metadata.get("validation_method", "legacy"),
             "cache_version": self._cache_metadata.get("cache_version", "1.0")
         }
