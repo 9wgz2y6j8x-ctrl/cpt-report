@@ -1842,6 +1842,7 @@ class RawDataWorkspaceView(ctk.CTkFrame):
         self._sort_column = None
         self._sort_reverse = False
         self._sorted_files = []  # Cache triée des fichiers
+        self._hovered_item = None
         self._build_ui()
 
         self.model.raw_data_manager.subscribe(self._on_data_changed)
@@ -1963,22 +1964,39 @@ class RawDataWorkspaceView(ctk.CTkFrame):
         self.tree.bind("<Delete>", self._on_delete_key)
         self.tree.bind("<Double-1>", self._on_double_click)
         self.tree.bind("<<TreeviewSelect>>", self._on_selection_changed)
+        self.tree.bind("<Motion>", self._on_treeview_hover)
+        self.tree.bind("<Leave>", self._on_treeview_leave)
 
-        # ─── Panneau détail ───
-        self._detail_frame = ctk.CTkFrame(self, fg_color="#F5F5F5", corner_radius=0,
-                                           height=56, border_width=1, border_color="#E0E0E0")
-        self._detail_frame.pack(fill="x", padx=20, pady=(0, 4))
-        self._detail_frame.pack_propagate(False)
+        # ─── Panneau détail (overrides) ───
+        self._detail_frame = ctk.CTkFrame(self, fg_color="#FAFAFA", corner_radius=8,
+                                           border_width=1, border_color="#E0E0E0")
+        self._detail_frame.pack(fill="x", padx=20, pady=(4, 4))
 
-        self._detail_label = ctk.CTkLabel(
-            self._detail_frame,
-            text="Sélectionnez un essai pour voir le détail des corrections.",
-            font=("Verdana", 11),
+        # Ligne titre du panneau détail
+        self._detail_header = ctk.CTkFrame(self._detail_frame, fg_color="transparent")
+        self._detail_header.pack(fill="x", padx=12, pady=(8, 0))
+
+        self._detail_icon = ctk.CTkLabel(
+            self._detail_header,
+            text="ℹ️",
+            font=("Verdana", 13),
             text_color="#9E9E9E",
-            justify="left",
+            width=20,
+        )
+        self._detail_icon.pack(side="left", padx=(0, 6))
+
+        self._detail_title = ctk.CTkLabel(
+            self._detail_header,
+            text="Sélectionnez un essai pour voir le détail des corrections.",
+            font=("Verdana", 12, "bold"),
+            text_color="#9E9E9E",
             anchor="w",
         )
-        self._detail_label.pack(fill="x", padx=12, pady=8)
+        self._detail_title.pack(side="left", fill="x", expand=True)
+
+        # Conteneur pour les lignes de corrections (initialement vide)
+        self._detail_overrides_frame = ctk.CTkFrame(self._detail_frame, fg_color="transparent")
+        self._detail_overrides_frame.pack(fill="x", padx=12, pady=(4, 8))
 
         # ─── Barre d'actions en bas ───
         actions_bar = ctk.CTkFrame(self, fg_color="transparent", height=42)
@@ -2069,6 +2087,57 @@ class RawDataWorkspaceView(ctk.CTkFrame):
                                 background="#FFF8E1",
                                 foreground="#2E2E2E",
                                 font=("Verdana", 12))
+        self.tree.tag_configure("selected",
+                                background="#E3F2FD",
+                                foreground="#1565C0",
+                                font=("Verdana", 12, "bold"))
+        self.tree.tag_configure("hover",
+                                background="#E8F4FD",
+                                foreground="#1565C0",
+                                font=("Verdana", 14))
+
+    # ──────────────────────── Hover & sélection (style Recherche Rapide) ──
+
+    def _on_treeview_hover(self, event):
+        """Effet de hover sur les lignes, identique à la Recherche Rapide."""
+        item = self.tree.identify_row(event.y)
+        if item and item != self._hovered_item:
+            if self._hovered_item:
+                self._reset_item_tag(self._hovered_item)
+            current_tags = list(self.tree.item(item)["tags"])
+            if "hover" not in current_tags:
+                current_tags.append("hover")
+            self.tree.item(item, tags=current_tags)
+            self._hovered_item = item
+
+    def _on_treeview_leave(self, event):
+        """Réinitialise le hover quand le curseur quitte le Treeview."""
+        if self._hovered_item:
+            self._reset_item_tag(self._hovered_item)
+            self._hovered_item = None
+
+    def _reset_item_tag(self, item):
+        """Réinitialise le tag d'un item à son tag de base (pair/impair, modifié ou non)."""
+        try:
+            current_tags = list(self.tree.item(item)["tags"])
+            if "hover" in current_tags:
+                current_tags.remove("hover")
+            if "selected" in current_tags:
+                current_tags.remove("selected")
+            # Recalculer le tag de base si nécessaire
+            base_tags = [t for t in current_tags
+                         if t in ("oddrow", "evenrow", "oddrow_modified", "evenrow_modified")]
+            if not base_tags:
+                idx = self.tree.index(item)
+                rdm = self.model.raw_data_manager
+                has_mod = rdm.has_override(item)
+                if idx % 2 == 0:
+                    current_tags.append("evenrow_modified" if has_mod else "evenrow")
+                else:
+                    current_tags.append("oddrow_modified" if has_mod else "oddrow")
+            self.tree.item(item, tags=current_tags)
+        except Exception:
+            pass
 
     # ──────────────────────── Tri par en-têtes ────────────────────────
 
@@ -2151,9 +2220,13 @@ class RawDataWorkspaceView(ctk.CTkFrame):
 
         if count == 0:
             self.empty_label.lift()
-            self._detail_label.configure(
+            self._detail_icon.configure(text="ℹ️", text_color="#9E9E9E")
+            self._detail_title.configure(
                 text="Sélectionnez un essai pour voir le détail des corrections.",
                 text_color="#9E9E9E")
+            self._detail_frame.configure(fg_color="#FAFAFA", border_color="#E0E0E0")
+            for w in self._detail_overrides_frame.winfo_children():
+                w.destroy()
         else:
             self.empty_label.lower()
             sorted_files = self._get_sorted_files(files)
@@ -2186,35 +2259,85 @@ class RawDataWorkspaceView(ctk.CTkFrame):
     # ──────────────────────── Panneau détail ────────────────────────
 
     def _on_selection_changed(self, event=None):
-        """Met à jour le panneau de détail quand la sélection change."""
-        sel = self.tree.selection()
-        if not sel:
-            self._detail_label.configure(
+        """Met à jour le panneau de détail et le style de sélection."""
+        # ── Style de sélection (identique à Recherche Rapide) ──
+        selection = self.tree.selection()
+        for item in self.tree.get_children():
+            current_tags = list(self.tree.item(item)["tags"])
+            if "selected" in current_tags:
+                current_tags.remove("selected")
+                self.tree.item(item, tags=current_tags)
+        for item in selection:
+            current_tags = list(self.tree.item(item)["tags"])
+            if "selected" not in current_tags:
+                current_tags.append("selected")
+            self.tree.item(item, tags=current_tags)
+
+        # ── Nettoyage du panneau détail ──
+        for w in self._detail_overrides_frame.winfo_children():
+            w.destroy()
+
+        if not selection:
+            self._detail_icon.configure(text="ℹ️", text_color="#9E9E9E")
+            self._detail_title.configure(
                 text="Sélectionnez un essai pour voir le détail des corrections.",
                 text_color="#9E9E9E")
+            self._detail_frame.configure(fg_color="#FAFAFA", border_color="#E0E0E0")
             return
 
-        fp = sel[0]
+        fp = selection[0]
         rdm = self.model.raw_data_manager
+        fname = rdm.get_original_value(fp, "file_name") or os.path.basename(fp)
+
         if not rdm.has_override(fp):
-            fname = rdm.get_original_value(fp, "file_name") or os.path.basename(fp)
-            self._detail_label.configure(
-                text=f"{fname} — Aucune correction. Les valeurs affichées sont les données terrain.",
-                text_color="#7E8C72")
+            self._detail_icon.configure(text="✅", text_color="#66BB6A")
+            self._detail_title.configure(
+                text=f"{fname} — données terrain originales (aucune correction)",
+                text_color="#558B2F")
+            self._detail_frame.configure(fg_color="#F1F8E9", border_color="#C5E1A5")
             return
 
-        parts = []
+        # ── Affichage des overrides ──
+        self._detail_icon.configure(text="✏️", text_color="#E65100")
+        self._detail_title.configure(
+            text=f"{fname} — corrections appliquées :",
+            text_color="#E65100")
+        self._detail_frame.configure(fg_color="#FFF8E1", border_color="#FFE082")
+
         for col in self.COLUMNS_CONFIG:
             if col["key"] is None:
                 continue
-            if rdm.has_override(fp, col["key"]):
-                orig = rdm.get_original_value(fp, col["key"]) or "(vide)"
-                corr = rdm.get_effective_value(fp, col["key"]) or "(vide)"
-                parts.append(f"{col['text']}: {orig}  \u2192  {corr}")
+            if not rdm.has_override(fp, col["key"]):
+                continue
 
-        fname = rdm.get_original_value(fp, "file_name") or os.path.basename(fp)
-        detail_text = f"{fname} — " + "  |  ".join(parts)
-        self._detail_label.configure(text=detail_text, text_color="#E65100")
+            orig = rdm.get_original_value(fp, col["key"]) or "(vide)"
+            corr = rdm.get_effective_value(fp, col["key"]) or "(vide)"
+
+            row = ctk.CTkFrame(self._detail_overrides_frame, fg_color="transparent")
+            row.pack(fill="x", pady=1)
+
+            ctk.CTkLabel(
+                row, text=f"  {col['text']} :",
+                font=("Verdana", 11, "bold"), text_color="#5D4037",
+                width=90, anchor="e",
+            ).pack(side="left")
+
+            ctk.CTkLabel(
+                row, text=orig,
+                font=("Verdana", 11), text_color="#9E9E9E",
+                anchor="w",
+            ).pack(side="left", padx=(6, 0))
+
+            ctk.CTkLabel(
+                row, text="→",
+                font=("Verdana", 12, "bold"), text_color="#E65100",
+            ).pack(side="left", padx=6)
+
+            ctk.CTkLabel(
+                row, text=corr,
+                font=("Verdana", 11, "bold"), text_color="#E65100",
+                anchor="w",
+            ).pack(side="left")
 
     # ──────────────────────── Édition inline ────────────────────────
 
