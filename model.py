@@ -58,47 +58,68 @@ class RawDataManager:
 
     # ──────────────────────── Ajout de fichiers ────────────────────────
 
-    def add_file(self, file_data: Dict) -> bool:
+    # Résultat d'ajout : succès, doublon ou fichier GEF introuvable
+    ADD_OK = "ok"
+    ADD_DUPLICATE = "duplicate"
+    ADD_GEF_MISSING = "gef_missing"
+
+    def add_file(self, file_data: Dict) -> str:
         """
         Ajoute un fichier à la liste des données brutes.
 
+        Avant l'ajout, vérifie que le fichier GEF référencé par file_path
+        existe toujours sur le disque.
+
         Args:
-            file_data: Dictionnaire contenant au minimum 'file_path' et 'file_name'.
-                       Les autres champs (Job Number, Date, etc.) sont conservés.
+            file_data: Dictionnaire contenant au minimum 'file_path' (chemin GEF)
+                       et 'file_name'. Peut aussi contenir 'meta_filepath' (.000).
 
         Returns:
-            True si le fichier a été ajouté, False s'il existait déjà.
+            ADD_OK si le fichier a été ajouté,
+            ADD_DUPLICATE s'il existait déjà,
+            ADD_GEF_MISSING si le fichier GEF n'existe plus sur le disque.
         """
         file_path = file_data.get("file_path", "")
         if not file_path:
-            return False
+            return self.ADD_GEF_MISSING
+
+        # Revalidation : le GEF doit exister au moment de l'ajout
+        if not os.path.isfile(file_path):
+            return self.ADD_GEF_MISSING
 
         with self._lock:
             if file_path in self._files:
-                return False
+                return self.ADD_DUPLICATE
             self._files[file_path] = copy.deepcopy(file_data)
             self._insertion_order.append(file_path)
             self._notify()
-            return True
+            return self.ADD_OK
 
-    def add_files(self, files_data: List[Dict]) -> int:
+    def add_files(self, files_data: List[Dict]) -> Dict[str, int]:
         """
         Ajoute plusieurs fichiers d'un coup.
 
         Returns:
-            Nombre de fichiers effectivement ajoutés (hors doublons).
+            Dict avec les compteurs : {"added": N, "duplicates": N, "gef_missing": N}
         """
         added = 0
+        duplicates = 0
+        gef_missing = 0
         with self._lock:
             for file_data in files_data:
                 file_path = file_data.get("file_path", "")
-                if file_path and file_path not in self._files:
-                    self._files[file_path] = copy.deepcopy(file_data)
-                    self._insertion_order.append(file_path)
-                    added += 1
+                if not file_path or not os.path.isfile(file_path):
+                    gef_missing += 1
+                    continue
+                if file_path in self._files:
+                    duplicates += 1
+                    continue
+                self._files[file_path] = copy.deepcopy(file_data)
+                self._insertion_order.append(file_path)
+                added += 1
             if added > 0:
                 self._notify()
-        return added
+        return {"added": added, "duplicates": duplicates, "gef_missing": gef_missing}
 
     # ──────────────────────── Suppression de fichiers ────────────────────────
 

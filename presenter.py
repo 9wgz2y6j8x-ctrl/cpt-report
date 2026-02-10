@@ -101,10 +101,13 @@ class AppPresenter:
             self._show_toast("Fichier invalide (chemin manquant)")
             return
 
-        added = self.model.raw_data_manager.add_file(file_data)
+        rdm = self.model.raw_data_manager
+        result = rdm.add_file(file_data)
         name = file_data.get("file_name", "fichier")
-        if added:
+        if result == rdm.ADD_OK:
             self._show_toast(f"'{name}' ajouté aux données brutes")
+        elif result == rdm.ADD_GEF_MISSING:
+            self._show_toast(f"'{name}' : fichier GEF introuvable sur le disque")
         else:
             self._show_toast(f"'{name}' est déjà dans les données brutes")
 
@@ -112,14 +115,26 @@ class AppPresenter:
         """Ajoute plusieurs fichiers aux données brutes."""
         if not files_data:
             return
-        count = self.model.raw_data_manager.add_files(files_data)
+        result = self.model.raw_data_manager.add_files(files_data)
+        added = result["added"]
+        duplicates = result["duplicates"]
+        gef_missing = result["gef_missing"]
         total = len(files_data)
-        if count == 0:
+
+        parts = []
+        if added > 0:
+            parts.append(f"{added} ajouté(s)")
+        if duplicates > 0:
+            parts.append(f"{duplicates} doublon(s)")
+        if gef_missing > 0:
+            parts.append(f"{gef_missing} GEF introuvable(s)")
+
+        if added == total:
+            self._show_toast(f"{added} fichier(s) ajouté(s) aux données brutes")
+        elif added == 0 and gef_missing == 0:
             self._show_toast(f"Les {total} fichier(s) sont déjà dans les données brutes")
-        elif count == total:
-            self._show_toast(f"{count} fichier(s) ajouté(s) aux données brutes")
         else:
-            self._show_toast(f"{count}/{total} fichier(s) ajouté(s) ({total - count} doublon(s))")
+            self._show_toast(f"{added}/{total} fichier(s) : {', '.join(parts)}")
 
     def _show_toast(self, message):
         """Affiche un toast de confirmation via la vue."""

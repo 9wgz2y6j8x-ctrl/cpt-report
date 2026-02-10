@@ -169,15 +169,37 @@ class CPTFilesIndexer:
         print(f"DEBUG: Hash MD5 - Résultat: {'Valide' if result else 'Invalidé'}")
         return result
 
-    def _process_file(self, file_path: str) -> Dict:
-        """CORRECTION : Traite un fichier avec gestion robuste des erreurs."""
+    @staticmethod
+    def _derive_gef_path(meta_path: str) -> Optional[str]:
+        """
+        Dérive le chemin du fichier GEF correspondant à un fichier .000.
+        Teste d'abord l'extension .GEF puis .gef (sensibilité à la casse sur Linux).
+        Retourne le chemin existant ou None si aucun GEF trouvé.
+        """
+        base = os.path.splitext(meta_path)[0]
+        for ext in (".GEF", ".gef"):
+            candidate = base + ext
+            if os.path.isfile(candidate):
+                return candidate
+        return None
+
+    def _process_file(self, file_path: str) -> Optional[Dict]:
+        """
+        Traite un fichier .000 et dérive le chemin GEF correspondant.
+        Retourne None si aucun fichier GEF n'existe pour ce .000.
+        """
         info_found = {}
         file_mtime = None
-        
+
+        # Dériver le chemin GEF ; exclure l'entrée si absent
+        gef_path = self._derive_gef_path(file_path)
+        if gef_path is None:
+            return None
+
         try:
             # Obtenir mtime en premier pour détecter les fichiers supprimés
             file_mtime = os.path.getmtime(file_path)
-            
+
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 for line in f:
                     for key in self.required_keys:
@@ -205,8 +227,9 @@ class CPTFilesIndexer:
             file_mtime = file_mtime or 0
 
         return {
-            "file_path": file_path,
-            "file_name": os.path.basename(file_path),
+            "file_path": gef_path,
+            "meta_filepath": file_path,
+            "file_name": os.path.basename(gef_path),
             "last_modified": file_mtime,
             **info_found
         }
@@ -320,7 +343,8 @@ class CPTFilesIndexer:
                 for future in concurrent.futures.as_completed(futures):
                     try:
                         result = future.result()
-                        self.indexed_data.append(result)
+                        if result is not None:
+                            self.indexed_data.append(result)
                         processed_count += 1
                         
                         # Callback de progression
