@@ -1815,14 +1815,28 @@ class FileSearchZoneView(ctk.CTkFrame):
 
 class RawDataWorkspaceView(ctk.CTkFrame):
     """
-    Workspace « Données Brutes » : affiche la liste des fichiers GEF
-    sélectionnés par l'utilisateur pour traitement.
+    Workspace « Données Brutes » : vue de correspondance entre les métadonnées
+    lues automatiquement dans les fichiers GEF et les valeurs finales pour le rapport.
+
+    Affiche : Fichier, N° Dossier, N° Essai, Date, Lieu.
+    Permet la correction inline sans jamais écraser les données terrain originales.
+    Les valeurs corrigées sont visuellement distinctes ; les originales restent consultables.
     """
+
+    # Correspondance colonnes <-> clés internes du modèle
+    COLUMNS = [
+        ("fichier",  "Fichier",     180, None),
+        ("dossier",  "N° Dossier",  120, "Job Number"),
+        ("essai",    "N° Essai",     90, "TestNumber"),
+        ("date",     "Date",        110, "Date"),
+        ("lieu",     "Lieu",        200, "Location"),
+    ]
 
     def __init__(self, parent, model, presenter, *args, **kwargs):
         super().__init__(parent, fg_color="transparent", corner_radius=0, *args, **kwargs)
         self.model = model
         self.presenter = presenter
+        self._edit_widget = None  # Widget d'édition inline actif
         self._build_ui()
 
         # S'abonner aux changements du RawDataManager
@@ -1860,55 +1874,74 @@ class RawDataWorkspaceView(ctk.CTkFrame):
         )
         self.btn_clear.pack(side="right", padx=20, pady=10)
 
+        # ─── Légende corrections ───
+        legend_bar = ctk.CTkFrame(self, fg_color="transparent", height=28)
+        legend_bar.pack(fill="x", padx=20, pady=(10, 0))
+        legend_bar.pack_propagate(False)
+
+        ctk.CTkLabel(
+            legend_bar,
+            text="Double-cliquez sur une cellule pour corriger une valeur.",
+            font=("Verdana", 11, "italic"),
+            text_color="#9E9E9E",
+        ).pack(side="left")
+
+        # Indicateur visuel de la légende
+        legend_dot = ctk.CTkFrame(legend_bar, fg_color="#E65100", width=10, height=10, corner_radius=5)
+        legend_dot.pack(side="left", padx=(20, 4))
+        ctk.CTkLabel(
+            legend_bar,
+            text="= valeur corrigée par l'utilisateur",
+            font=("Verdana", 11),
+            text_color="#8D6E63",
+        ).pack(side="left")
+
         # ─── Zone treeview ───
         tree_container = ctk.CTkFrame(self, fg_color="white", corner_radius=0, border_width=1, border_color="#E0E0E0")
-        tree_container.pack(fill="both", expand=True, padx=20, pady=(15, 10))
+        tree_container.pack(fill="both", expand=True, padx=20, pady=(8, 4))
+        self._tree_container = tree_container
 
-        # Configurer le style treeview pour données brutes (même style que le treeview de recherche)
+        # Configurer le style treeview
         style = ttk.Style()
         style.configure("RawData.Treeview",
                         background="white",
                         foreground="#2E2E2E",
                         fieldbackground="white",
-                        font=("Verdana", 14),
-                        rowheight=35,
+                        font=("Verdana", 12),
+                        rowheight=34,
                         borderwidth=0,
                         highlightthickness=0,
                         relief="flat")
         style.configure("RawData.Treeview.Heading",
-                        font=("Verdana", 12, "bold"),
-                        background="#F0F0F0",
-                        foreground="#2E2E2E",
-                        relief="flat")
+                        font=("Verdana", 11, "bold"),
+                        background="#F5F5F5",
+                        foreground="#424242",
+                        relief="flat",
+                        padding=(8, 6))
         style.layout("RawData.Treeview", [
             ('RawData.Treeview.treearea', {'sticky': 'nswe'})
         ])
 
-        columns = ("dossier", "essai", "lieu", "date", "operateur")
+        col_ids = [c[0] for c in self.COLUMNS]
         self.tree = ttk.Treeview(
             tree_container,
-            columns=columns,
+            columns=col_ids,
             show="headings",
             selectmode="extended",
             style="RawData.Treeview",
         )
 
-        self.tree.heading("dossier", text="Dossier")
-        self.tree.heading("essai", text="Essai")
-        self.tree.heading("lieu", text="Lieu")
-        self.tree.heading("date", text="Date")
-        self.tree.heading("operateur", text="Opérateur")
+        for col_id, heading, width, _key in self.COLUMNS:
+            self.tree.heading(col_id, text=heading)
+            anchor = "w"
+            self.tree.column(col_id, width=width, anchor=anchor, minwidth=60)
 
-        self.tree.column("dossier", width=140, anchor="w")
-        self.tree.column("essai", width=80, anchor="w")
-        self.tree.column("lieu", width=200, anchor="w")
-        self.tree.column("date", width=110, anchor="w")
-        self.tree.column("operateur", width=120, anchor="w")
-
-        self.tree.tag_configure("oddrow", background="#F3F3F3", foreground="#2E2E2E",
-                                font=("Verdana", 12))
-        self.tree.tag_configure("evenrow", background="white", foreground="#2E2E2E",
-                                font=("Verdana", 12))
+        # Tags pour lignes alternées
+        self.tree.tag_configure("evenrow", background="white", foreground="#2E2E2E")
+        self.tree.tag_configure("oddrow", background="#FAFAFA", foreground="#2E2E2E")
+        # Tags pour lignes avec corrections
+        self.tree.tag_configure("evenrow_modified", background="#FFF8E1", foreground="#2E2E2E")
+        self.tree.tag_configure("oddrow_modified", background="#FFF3C4", foreground="#2E2E2E")
 
         scrollbar = ttk.Scrollbar(tree_container, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=scrollbar.set)
@@ -1916,13 +1949,31 @@ class RawDataWorkspaceView(ctk.CTkFrame):
         self.tree.pack(side="left", fill="both", expand=True, padx=(5, 0), pady=5)
         scrollbar.pack(side="right", fill="y", pady=5)
 
-        # Clic droit pour retirer un fichier
+        # Événements
         self.tree.bind("<Button-3>", self._on_right_click)
         self.tree.bind("<Delete>", self._on_delete_key)
+        self.tree.bind("<Double-1>", self._on_double_click)
+        self.tree.bind("<<TreeviewSelect>>", self._on_selection_changed)
+
+        # ─── Panneau détail (sous le treeview) ───
+        self._detail_frame = ctk.CTkFrame(self, fg_color="#F5F5F5", corner_radius=0,
+                                           height=56, border_width=1, border_color="#E0E0E0")
+        self._detail_frame.pack(fill="x", padx=20, pady=(0, 4))
+        self._detail_frame.pack_propagate(False)
+
+        self._detail_label = ctk.CTkLabel(
+            self._detail_frame,
+            text="Sélectionnez un essai pour voir le détail des corrections.",
+            font=("Verdana", 11),
+            text_color="#9E9E9E",
+            justify="left",
+            anchor="w",
+        )
+        self._detail_label.pack(fill="x", padx=12, pady=8)
 
         # ─── Barre d'actions en bas ───
         actions_bar = ctk.CTkFrame(self, fg_color="transparent", height=42)
-        actions_bar.pack(fill="x", padx=20, pady=(0, 15))
+        actions_bar.pack(fill="x", padx=20, pady=(0, 12))
 
         btn_style = {
             "font": ("Verdana", 13),
@@ -1946,9 +1997,9 @@ class RawDataWorkspaceView(ctk.CTkFrame):
         # Label info
         self.info_label = ctk.CTkLabel(
             actions_bar,
-            text="Double-cliquez ou utilisez le menu contextuel dans Recherche Rapide pour ajouter des fichiers.",
-            font=("Verdana", 12, "italic"),
-            text_color="#9E9E9E",
+            text="Utilisez la Recherche Rapide pour ajouter des fichiers.",
+            font=("Verdana", 11, "italic"),
+            text_color="#BDBDBD",
         )
         self.info_label.pack(side="left", padx=10)
 
@@ -1960,26 +2011,28 @@ class RawDataWorkspaceView(ctk.CTkFrame):
             text_color="#BDBDBD",
             justify="center",
         )
-        # Sera affiché/masqué selon le contenu
         self.empty_label.place(relx=0.5, rely=0.45, anchor="center")
 
     # ──────────────────────── Mise à jour de l'affichage ────────────────────────
 
     def _on_data_changed(self):
         """Callback du RawDataManager : rafraîchit l'affichage."""
-        # Doit être exécuté dans le thread GUI
         try:
             self.after(0, self._refresh_display)
         except Exception:
             pass
 
     def _refresh_display(self):
-        """Rafraîchit le treeview et le titre avec les données actuelles."""
-        files = self.model.raw_data_manager.get_all_files()
+        """Rafraîchit le treeview avec données terrain + corrections."""
+        self._cancel_edit()
+        rdm = self.model.raw_data_manager
+        files = rdm.get_all_files()
         count = len(files)
 
-        # Titre
         self.title_label.configure(text=f"DONNÉES BRUTES — {count} fichier(s) sélectionné(s)")
+
+        # Mémoriser la sélection
+        prev_sel = self.tree.selection()
 
         # Vider le treeview
         for item in self.tree.get_children():
@@ -1987,22 +2040,157 @@ class RawDataWorkspaceView(ctk.CTkFrame):
 
         if count == 0:
             self.empty_label.lift()
+            self._detail_label.configure(
+                text="Sélectionnez un essai pour voir le détail des corrections.",
+                text_color="#9E9E9E")
         else:
             self.empty_label.lower()
             for i, f in enumerate(files):
-                tag = "evenrow" if i % 2 == 0 else "oddrow"
-                self.tree.insert(
-                    "", "end",
-                    iid=f.get("file_path", str(i)),
-                    values=(
-                        f.get("Job Number", ""),
-                        f.get("TestNumber", ""),
-                        f.get("Location", ""),
-                        f.get("Date", ""),
-                        f.get("Operator", ""),
-                    ),
-                    tags=(tag,),
-                )
+                fp = f.get("file_path", str(i))
+                has_mod = rdm.has_override(fp)
+                if i % 2 == 0:
+                    tag = "evenrow_modified" if has_mod else "evenrow"
+                else:
+                    tag = "oddrow_modified" if has_mod else "oddrow"
+
+                values = []
+                for col_id, _heading, _w, field_key in self.COLUMNS:
+                    if field_key is None:
+                        # Colonne fichier : toujours la valeur brute
+                        values.append(f.get("file_name", ""))
+                    else:
+                        eff = rdm.get_effective_value(fp, field_key)
+                        if rdm.has_override(fp, field_key):
+                            values.append(f"\u270E {eff}")
+                        else:
+                            values.append(eff)
+
+                self.tree.insert("", "end", iid=fp, values=tuple(values), tags=(tag,))
+
+            # Restaurer la sélection
+            for s in prev_sel:
+                if self.tree.exists(s):
+                    self.tree.selection_add(s)
+
+    # ──────────────────────── Panneau détail ────────────────────────
+
+    def _on_selection_changed(self, event=None):
+        """Met à jour le panneau de détail quand la sélection change."""
+        sel = self.tree.selection()
+        if not sel:
+            self._detail_label.configure(
+                text="Sélectionnez un essai pour voir le détail des corrections.",
+                text_color="#9E9E9E")
+            return
+
+        fp = sel[0]
+        rdm = self.model.raw_data_manager
+        if not rdm.has_override(fp):
+            fname = rdm.get_original_value(fp, "file_name") or os.path.basename(fp)
+            self._detail_label.configure(
+                text=f"{fname} — Aucune correction. Les valeurs affichées sont les données terrain.",
+                text_color="#7E8C72")
+            return
+
+        # Construire le résumé des corrections
+        parts = []
+        for _col_id, heading, _w, field_key in self.COLUMNS:
+            if field_key is None:
+                continue
+            if rdm.has_override(fp, field_key):
+                orig = rdm.get_original_value(fp, field_key) or "(vide)"
+                corr = rdm.get_effective_value(fp, field_key) or "(vide)"
+                parts.append(f"{heading}: {orig}  \u2192  {corr}")
+
+        fname = rdm.get_original_value(fp, "file_name") or os.path.basename(fp)
+        detail_text = f"{fname} — " + "  |  ".join(parts)
+        self._detail_label.configure(text=detail_text, text_color="#E65100")
+
+    # ──────────────────────── Édition inline ────────────────────────
+
+    def _on_double_click(self, event):
+        """Double-clic sur une cellule : ouvrir l'éditeur inline."""
+        item = self.tree.identify_row(event.y)
+        col = self.tree.identify_column(event.x)
+        if not item or not col:
+            return
+
+        # col est au format "#1", "#2", etc. (1-indexed)
+        col_index = int(col.replace("#", "")) - 1
+        if col_index < 0 or col_index >= len(self.COLUMNS):
+            return
+
+        _col_id, _heading, _w, field_key = self.COLUMNS[col_index]
+        if field_key is None:
+            # Colonne fichier : non éditable
+            return
+
+        self._start_inline_edit(item, col, col_index, field_key)
+
+    def _start_inline_edit(self, item, col, col_index, field_key):
+        """Crée un Entry widget superposé à la cellule pour l'édition."""
+        self._cancel_edit()
+
+        # Obtenir les coordonnées de la cellule
+        try:
+            bbox = self.tree.bbox(item, col)
+        except Exception:
+            return
+        if not bbox:
+            return
+        x, y, w, h = bbox
+
+        rdm = self.model.raw_data_manager
+        current_value = rdm.get_effective_value(item, field_key)
+
+        entry = tk.Entry(
+            self.tree,
+            font=("Verdana", 12),
+            bd=2,
+            relief="solid",
+            highlightthickness=1,
+            highlightcolor="#1565C0",
+            highlightbackground="#90CAF9",
+        )
+        entry.insert(0, current_value)
+        entry.select_range(0, tk.END)
+        entry.place(x=x, y=y, width=w, height=h)
+        entry.focus_set()
+
+        self._edit_widget = entry
+        self._edit_item = item
+        self._edit_field = field_key
+
+        entry.bind("<Return>", lambda e: self._confirm_edit())
+        entry.bind("<Escape>", lambda e: self._cancel_edit())
+        entry.bind("<FocusOut>", lambda e: self._confirm_edit())
+
+    def _confirm_edit(self):
+        """Valide la correction inline."""
+        if not self._edit_widget:
+            return
+        try:
+            new_value = self._edit_widget.get().strip()
+        except Exception:
+            self._cancel_edit()
+            return
+
+        fp = self._edit_item
+        field = self._edit_field
+        self._cancel_edit()
+
+        self.model.raw_data_manager.set_override(fp, field, new_value)
+
+    def _cancel_edit(self):
+        """Annule l'édition inline en cours."""
+        if self._edit_widget:
+            try:
+                self._edit_widget.destroy()
+            except Exception:
+                pass
+            self._edit_widget = None
+            self._edit_item = None
+            self._edit_field = None
 
     # ──────────────────────── Actions utilisateur ────────────────────────
 
@@ -2017,51 +2205,99 @@ class RawDataWorkspaceView(ctk.CTkFrame):
         sel = self.tree.selection()
         if not sel:
             return
-        paths = list(sel)  # iid = file_path
-        self.model.raw_data_manager.remove_files(paths)
+        self.model.raw_data_manager.remove_files(list(sel))
 
     def _on_delete_key(self, event):
         """Touche Suppr : retire les fichiers sélectionnés."""
         self._on_remove_selection()
 
+    # ──────────────────────── Menu contextuel ────────────────────────
+
     def _on_right_click(self, event):
-        """Menu contextuel dans le workspace données brutes."""
+        """Menu contextuel enrichi : retirer fichier + rétablir données terrain."""
         item = self.tree.identify_row(event.y)
         if not item:
             return
         self.tree.selection_set(item)
 
         root = self.winfo_toplevel()
-        menu = ctk.CTkFrame(root, fg_color="#FFFFFF", corner_radius=0,
+        menu = ctk.CTkFrame(root, fg_color="#FFFFFF", corner_radius=6,
                             border_width=1, border_color="#D0D0D0")
 
-        btn = ctk.CTkButton(
+        menu_btn_style = {
+            "font": ("Verdana", 13),
+            "fg_color": "transparent",
+            "anchor": "w",
+            "height": 34,
+            "corner_radius": 4,
+        }
+
+        # ─── Option : Rétablir données terrain ───
+        rdm = self.model.raw_data_manager
+        has_corrections = rdm.has_override(item)
+
+        btn_reset = ctk.CTkButton(
+            menu,
+            text="  Rétablir données terrain",
+            text_color="#1565C0" if has_corrections else "#BDBDBD",
+            hover_color="#E3F2FD" if has_corrections else "#FAFAFA",
+            state="normal" if has_corrections else "disabled",
+            command=lambda: self._ctx_reset_overrides(menu, item),
+            **menu_btn_style,
+        )
+        btn_reset.pack(fill="x", padx=6, pady=(6, 2))
+
+        # Séparateur visuel
+        sep = ctk.CTkFrame(menu, fg_color="#E0E0E0", height=1)
+        sep.pack(fill="x", padx=10, pady=2)
+
+        # ─── Option : Retirer ce fichier ───
+        btn_remove = ctk.CTkButton(
             menu,
             text="  Retirer ce fichier",
-            font=("Verdana", 14),
-            fg_color="transparent",
             text_color="#C62828",
             hover_color="#FFEBEE",
-            anchor="w",
-            height=36,
-            corner_radius=0,
             command=lambda: self._ctx_remove(menu, item),
+            **menu_btn_style,
         )
-        btn.pack(fill="x", padx=6, pady=6)
+        btn_remove.pack(fill="x", padx=6, pady=(2, 6))
 
         menu.place(x=event.x_root - root.winfo_rootx(),
                    y=event.y_root - root.winfo_rooty())
         menu.lift()
 
         def _close(e):
+            # Ne pas fermer si le clic est dans le menu
+            try:
+                mx, my = e.x_root, e.y_root
+                wx = menu.winfo_rootx()
+                wy = menu.winfo_rooty()
+                ww = menu.winfo_width()
+                wh = menu.winfo_height()
+                if wx <= mx <= wx + ww and wy <= my <= wy + wh:
+                    return
+            except Exception:
+                pass
             try:
                 if menu.winfo_exists():
                     menu.destroy()
             except Exception:
                 pass
-            root.unbind("<Button-1>", cid)
+            try:
+                root.unbind("<Button-1>", cid)
+            except Exception:
+                pass
 
         cid = root.bind("<Button-1>", _close, add="+")
+
+    def _ctx_reset_overrides(self, menu, item):
+        """Rétablit les données terrain via le menu contextuel."""
+        try:
+            if menu.winfo_exists():
+                menu.destroy()
+        except Exception:
+            pass
+        self.model.raw_data_manager.reset_overrides(item)
 
     def _ctx_remove(self, menu, item):
         """Retire le fichier via le menu contextuel."""

@@ -18,10 +18,16 @@ class RawDataManager:
     pour éviter les doublons.
     """
 
+    # Champs éditables par l'utilisateur (correspondance clé interne -> label)
+    EDITABLE_FIELDS = ["Job Number", "TestNumber", "Date", "Location"]
+
     def __init__(self):
         self._lock = threading.Lock()
         # Dictionnaire indexé par file_path (clé unique) -> données complètes du fichier
         self._files: Dict[str, Dict] = {}
+        # Corrections utilisateur : {file_path: {field: corrected_value}}
+        # Séparées des données terrain pour ne jamais les écraser
+        self._overrides: Dict[str, Dict[str, str]] = {}
         # Ordre d'insertion pour maintenir un affichage cohérent
         self._insertion_order: List[str] = []
         # Callbacks de notification lors de changements
@@ -102,6 +108,7 @@ class RawDataManager:
             if file_path in self._files:
                 del self._files[file_path]
                 self._insertion_order.remove(file_path)
+                self._overrides.pop(file_path, None)
                 self._notify()
                 return True
             return False
@@ -114,6 +121,7 @@ class RawDataManager:
                 if fp in self._files:
                     del self._files[fp]
                     self._insertion_order.remove(fp)
+                    self._overrides.pop(fp, None)
                     removed += 1
             if removed > 0:
                 self._notify()
@@ -124,6 +132,7 @@ class RawDataManager:
         with self._lock:
             self._files.clear()
             self._insertion_order.clear()
+            self._overrides.clear()
             self._notify()
 
     # ──────────────────────── Consultation ────────────────────────
@@ -154,6 +163,81 @@ class RawDataManager:
         """Retourne la liste des chemins de fichiers dans l'ordre d'insertion."""
         with self._lock:
             return list(self._insertion_order)
+
+    # ──────────────────────── Corrections utilisateur ────────────────────────
+
+    def set_override(self, file_path: str, field: str, value: str):
+        """
+        Enregistre une correction utilisateur pour un champ donné.
+        La valeur terrain originale reste intacte dans _files.
+        Si la valeur corrigée est identique à l'originale, supprime l'override.
+        """
+        if field not in self.EDITABLE_FIELDS:
+            return
+        with self._lock:
+            if file_path not in self._files:
+                return
+            original = self._files[file_path].get(field, "")
+            if value == original:
+                # Même valeur que l'originale : supprimer l'override s'il existe
+                if file_path in self._overrides:
+                    self._overrides[file_path].pop(field, None)
+                    if not self._overrides[file_path]:
+                        del self._overrides[file_path]
+            else:
+                if file_path not in self._overrides:
+                    self._overrides[file_path] = {}
+                self._overrides[file_path][field] = value
+            self._notify()
+
+    def get_effective_value(self, file_path: str, field: str) -> str:
+        """Retourne la valeur corrigée si elle existe, sinon la valeur terrain."""
+        with self._lock:
+            if file_path in self._overrides and field in self._overrides[file_path]:
+                return self._overrides[file_path][field]
+            if file_path in self._files:
+                return self._files[file_path].get(field, "")
+            return ""
+
+    def get_original_value(self, file_path: str, field: str) -> str:
+        """Retourne la valeur terrain originale (jamais modifiée)."""
+        with self._lock:
+            if file_path in self._files:
+                return self._files[file_path].get(field, "")
+            return ""
+
+    def has_override(self, file_path: str, field: str = None) -> bool:
+        """
+        Vérifie si un fichier a des corrections.
+        Si field est spécifié, vérifie uniquement ce champ.
+        """
+        with self._lock:
+            if file_path not in self._overrides:
+                return False
+            if field is None:
+                return bool(self._overrides[file_path])
+            return field in self._overrides[file_path]
+
+    def get_overrides(self, file_path: str) -> Dict[str, str]:
+        """Retourne toutes les corrections pour un fichier donné."""
+        with self._lock:
+            return dict(self._overrides.get(file_path, {}))
+
+    def reset_overrides(self, file_path: str):
+        """Rétablit toutes les données terrain pour un fichier (supprime toutes les corrections)."""
+        with self._lock:
+            if file_path in self._overrides:
+                del self._overrides[file_path]
+                self._notify()
+
+    def reset_field_override(self, file_path: str, field: str):
+        """Rétablit la donnée terrain pour un champ spécifique."""
+        with self._lock:
+            if file_path in self._overrides and field in self._overrides[file_path]:
+                del self._overrides[file_path][field]
+                if not self._overrides[file_path]:
+                    del self._overrides[file_path]
+                self._notify()
 
 def get_resource_path(relative_path):
     """Obtient le chemin vers les ressources, que ce soit en dev ou en exe."""
