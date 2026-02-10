@@ -1079,7 +1079,6 @@ class FileSearchZoneView(ctk.CTkFrame):
         # Layout
         self.results_tree.grid(row=0, column=0, sticky="nsew")
         self.v_scrollbar.grid(row=0, column=1, sticky="ns")
-        self.h_scrollbar.grid(row=1, column=0, sticky="ew")
         
         # Configuration des tags pour l'apparence
         self._configure_treeview_tags()
@@ -1094,10 +1093,7 @@ class FileSearchZoneView(ctk.CTkFrame):
     def _configure_modern_treeview_style(self):
         """Configure un style moderne pour le Treeview SANS bordures."""
         style = ttk.Style()
-        
-        # Changer le thème pour permettre la personnalisation
-        style.theme_use('clam')
-        
+
         # Layout personnalisé pour supprimer toutes les bordures
         style.layout("Modern.Treeview", [
             ('Modern.Treeview.treearea', {'sticky': 'nswe'})
@@ -1128,27 +1124,12 @@ class FileSearchZoneView(ctk.CTkFrame):
                        lightcolor="#F0F0F0",
                        relief="flat")
         
-        # Scrollbar horizontale  
-        style.configure("Modern.Horizontal.TScrollbar",
-                       background="#E0E0E0",
-                       troughcolor="#EEF8FE", 
-                       borderwidth=0,
-                       arrowcolor="#666666",
-                       darkcolor="#D0D0D0",
-                       lightcolor="#F0F0F0",
-                       relief="flat")
-        
-        self.v_scrollbar = ttk.Scrollbar(self.treeview_frame, 
-                                        orient="vertical", 
+        self.v_scrollbar = ttk.Scrollbar(self.treeview_frame,
+                                        orient="vertical",
                                         command=self.results_tree.yview,
                                         style="Modern.Vertical.TScrollbar")
-        self.h_scrollbar = ttk.Scrollbar(self.treeview_frame, 
-                                        orient="horizontal", 
-                                        command=self.results_tree.xview,
-                                        style="Modern.Horizontal.TScrollbar")
-        
-        self.results_tree.configure(yscrollcommand=self.v_scrollbar.set, 
-                                   xscrollcommand=self.h_scrollbar.set)
+
+        self.results_tree.configure(yscrollcommand=self.v_scrollbar.set)
 
     def _configure_treeview_tags(self):
         """Configure les tags d'apparence du Treeview."""
@@ -2539,6 +2520,10 @@ class AppView(ctk.CTk):
         self.model = model
         self.presenter = presenter
         self._closing = False
+
+        # Initialiser le thème clam une seule fois pour tous les Treeview
+        style = ttk.Style()
+        style.theme_use('clam')
         
         # Variables pour gérer le splash screen intelligent
         self.splash_min_time_elapsed = False
