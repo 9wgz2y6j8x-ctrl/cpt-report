@@ -23,6 +23,87 @@ from typing import Optional
 from gef_reader import read_gef_to_dataframe, GefFileError
 from despike_cleaning import hampel_peak_filter_aggressive
 from cpt_plot import CPTPlotConfig, _resolve_column_name
+import sys
+
+
+# ---------------------------------------------------------------------------
+# HiDPI / Retina scaling detection & correction
+# ---------------------------------------------------------------------------
+
+def _detect_tk_scaling(widget) -> float:
+    """
+    Détecte le facteur de scaling HiDPI effectif de l'environnement Tk.
+
+    Sur macOS Retina, Tk applique un scaling ×2 au widget canvas.
+    FigureCanvasTkAgg rasterise à figure.dpi, puis Tk affiche le bitmap
+    en le multipliant par ce facteur — d'où les polices/grilles surdimensionnées.
+
+    Retourne le facteur de scaling (ex. 2.0 sur Retina, 1.0 sur écran standard).
+    """
+    try:
+        root = widget.winfo_toplevel()
+
+        # Méthode 1 : tk scaling (renvoie pts/pixel, 1.0 = 72 dpi)
+        tk_scaling = root.tk.call('tk', 'scaling')
+
+        # Méthode 2 : ratio résolution physique / logique (fiable sur macOS)
+        screen_w = root.winfo_screenwidth()      # pixels logiques
+        try:
+            # screenmmwidth → largeur physique en mm
+            mm_w = root.winfo_screenmmwidth()
+            physical_dpi = screen_w / (mm_w / 25.4) if mm_w > 0 else 72.0
+        except Exception:
+            physical_dpi = 72.0
+
+        # Sur macOS Retina, tk_scaling ≈ 2.0 (144/72).
+        # Sur Linux/X11, tk_scaling reflète le DPI système (souvent 1.0 ou 1.33).
+        # On utilise tk_scaling comme indicateur principal.
+        if sys.platform == 'darwin':
+            # macOS : tk scaling est directement le facteur Retina
+            factor = tk_scaling if tk_scaling > 1.0 else 1.0
+        else:
+            # Linux / Windows : tk_scaling est souvent 1.0 même sur HiDPI
+            # On se fie au ratio DPI physique / 96 (référence Windows/Linux)
+            factor = max(1.0, physical_dpi / 96.0) if physical_dpi > 110 else 1.0
+
+        return float(factor)
+
+    except Exception as e:
+        print(f"[CPT-Scaling] Impossible de détecter le scaling Tk : {e}")
+        return 1.0
+
+
+def _apply_hidpi_correction(cfg: CPTPlotConfig, factor: float) -> CPTPlotConfig:
+    """
+    Renvoie une copie corrigée de CPTPlotConfig pour compenser le scaling Tk.
+
+    Stratégie principale : diviser figure_dpi par le facteur.
+    Ajustement complémentaire : réduire légèrement les linewidths de grille
+    (le DPI seul ne corrige pas parfaitement l'épaisseur perçue des traits fins).
+    """
+    if factor <= 1.0:
+        print(f"[CPT-Scaling] factor={factor:.2f} → aucune correction appliquée")
+        return cfg
+
+    inv = 1.0 / factor  # ex. 0.5 pour Retina ×2
+
+    from dataclasses import replace
+    corrected = replace(
+        cfg,
+        figure_dpi=max(72, int(cfg.figure_dpi * inv)),
+        # Ajustement fin des épaisseurs de grille / traits
+        # (le DPI corrige la taille globale, mais les traits fins
+        #  restent un peu trop épais après upscale ; on compense ~70 %)
+        qc_linewidth=cfg.qc_linewidth * (inv ** 0.4),
+        qst_linewidth=cfg.qst_linewidth * (inv ** 0.4),
+    )
+
+    print(f"[CPT-Scaling] factor={factor:.2f} | "
+          f"dpi: {cfg.figure_dpi}→{corrected.figure_dpi} | "
+          f"qc_lw: {cfg.qc_linewidth:.2f}→{corrected.qc_linewidth:.2f} | "
+          f"qst_lw: {cfg.qst_linewidth:.2f}→{corrected.qst_linewidth:.2f}")
+
+    return corrected
 
 # ---------------------------------------------------------------------------
 # Palette et typographie (identiques a la maquette)
@@ -433,6 +514,11 @@ class CPTCleaningView(ctk.CTkFrame):
         chart_frame = ctk.CTkFrame(chart_area, fg_color=COLORS["card"], corner_radius=8)
         chart_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
+        # --- HiDPI correction -------------------------------------------
+        self._hidpi_factor = _detect_tk_scaling(self)
+        self.cfg = _apply_hidpi_correction(self.cfg, self._hidpi_factor)
+        # -----------------------------------------------------------------
+
         # Matplotlib figure (dimensions et marges depuis CPTPlotConfig)
         cfg = self.cfg
         self.fig = Figure(
@@ -580,15 +666,17 @@ class CPTCleaningView(ctk.CTkFrame):
         self.ax_qc.tick_params(axis='x', which='major', labelsize=cfg.tick_label_fontsize)
 
         # Grille verticale sur ax_qc (major + minor)
+        # Correction HiDPI : épaisseur de grille compensée
+        _glw = 0.65 * (1.0 / self._hidpi_factor) ** 0.4 if self._hidpi_factor > 1 else 0.65
         self.ax_qc.xaxis.grid(True, which='minor', linestyle='--',
-                               linewidth=0.65, color='lightgray', dashes=(4, 7))
+                               linewidth=_glw, color='lightgray', dashes=(4, 7))
         self.ax_qc.xaxis.grid(True, which='major', linestyle='--',
-                               linewidth=0.65, color='lightgray', dashes=(4, 7))
+                               linewidth=_glw, color='lightgray', dashes=(4, 7))
 
         # -- ax_qst = axe principal (bas) -- identique a ax1 de plot_cpt()
         self.ax_qst.invert_yaxis()
         self.ax_qst.grid(False)
-        self.ax_qst.yaxis.grid(True, linestyle='--', linewidth=0.65,
+        self.ax_qst.yaxis.grid(True, linestyle='--', linewidth=_glw,
                                 color='lightgray', dashes=(4, 7))
 
         self.ax_qst.set_xlim(0, cfg.qst_max)
