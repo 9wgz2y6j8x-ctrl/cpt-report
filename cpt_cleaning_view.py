@@ -23,10 +23,6 @@ from typing import Optional
 from gef_reader import read_gef_to_dataframe, GefFileError
 from despike_cleaning import hampel_peak_filter_aggressive
 from cpt_plot import CPTPlotConfig, _resolve_column_name
-import sys
-
-
-# ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
 # Palette et typographie (identiques a la maquette)
@@ -584,17 +580,15 @@ class CPTCleaningView(ctk.CTkFrame):
         self.ax_qc.tick_params(axis='x', which='major', labelsize=cfg.tick_label_fontsize)
 
         # Grille verticale sur ax_qc (major + minor)
-        # Correction HiDPI : épaisseur de grille compensée
-        _glw = 0.65
         self.ax_qc.xaxis.grid(True, which='minor', linestyle='--',
-                               linewidth=_glw, color='lightgray', dashes=(4, 7))
+                               linewidth=0.65, color='lightgray', dashes=(4, 7))
         self.ax_qc.xaxis.grid(True, which='major', linestyle='--',
-                               linewidth=_glw, color='lightgray', dashes=(4, 7))
+                               linewidth=0.65, color='lightgray', dashes=(4, 7))
 
         # -- ax_qst = axe principal (bas) -- identique a ax1 de plot_cpt()
         self.ax_qst.invert_yaxis()
         self.ax_qst.grid(False)
-        self.ax_qst.yaxis.grid(True, linestyle='--', linewidth=_glw,
+        self.ax_qst.yaxis.grid(True, linestyle='--', linewidth=0.65,
                                 color='lightgray', dashes=(4, 7))
 
         self.ax_qst.set_xlim(0, cfg.qst_max)
