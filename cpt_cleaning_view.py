@@ -30,78 +30,126 @@ import sys
 # HiDPI / Retina scaling detection & correction
 # ---------------------------------------------------------------------------
 
-def _detect_tk_scaling(widget) -> float:
-    """
-    Détecte le facteur de scaling HiDPI effectif de l'environnement Tk.
-
-    Sur macOS Retina, Tk applique un scaling ×2 au widget canvas.
-    FigureCanvasTkAgg rasterise à figure.dpi, puis Tk affiche le bitmap
-    en le multipliant par ce facteur — d'où les polices/grilles surdimensionnées.
-
-    Retourne le facteur de scaling (ex. 2.0 sur Retina, 1.0 sur écran standard).
-    """
+def _log_tk_metrics(widget):
+    """Diagnostic complet des métriques Tk — utile pour le debug multi-écran."""
     try:
         root = widget.winfo_toplevel()
+        tk_scaling  = root.tk.call('tk', 'scaling')
+        fpixels_1i  = root.winfo_fpixels('1i')      # combien de pixels pour 1 inch
+        screen_w    = root.winfo_screenwidth()
+        screen_h    = root.winfo_screenheight()
+        mm_w        = root.winfo_screenmmwidth()
+        mm_h        = root.winfo_screenmmheight()
+        print(f"[CPT-Scaling] Tk metrics: "
+              f"tk_scaling={tk_scaling}, fpixels('1i')={fpixels_1i}, "
+              f"screen={screen_w}×{screen_h} px, "
+              f"screen_mm={mm_w}×{mm_h} mm")
+    except Exception as e:
+        print(f"[CPT-Scaling] Tk metrics: impossible ({e})")
 
-        # Méthode 1 : tk scaling (renvoie pts/pixel, 1.0 = 72 dpi)
-        tk_scaling = root.tk.call('tk', 'scaling')
 
-        # Méthode 2 : ratio résolution physique / logique (fiable sur macOS)
-        screen_w = root.winfo_screenwidth()      # pixels logiques
+def _detect_hidpi_factor(canvas_widget, fig) -> float:
+    """
+    Détecte le facteur de scaling HiDPI *effectif* en comparant la taille
+    réelle du canvas Tk (pixels alloués par le window manager) à la taille
+    que matplotlib pense occuper (fig.get_size_inches() * fig.dpi).
+
+    Doit être appelé APRÈS update_idletasks() + canvas.draw() pour que le
+    widget ait ses dimensions finales.
+
+    Priorité :
+     1. Variable d'env CPT_HIDPI_FACTOR (override manuel)
+     2. Ratio empirique canvas_pixels / expected_pixels
+     3. Fallback 1.0
+    """
+    import os
+
+    # --- Override manuel (filet de sécurité) ---
+    env_override = os.environ.get('CPT_HIDPI_FACTOR')
+    if env_override:
         try:
-            # screenmmwidth → largeur physique en mm
-            mm_w = root.winfo_screenmmwidth()
-            physical_dpi = screen_w / (mm_w / 25.4) if mm_w > 0 else 72.0
-        except Exception:
-            physical_dpi = 72.0
+            manual = float(env_override)
+            if manual > 0:
+                print(f"[CPT-Scaling] Override manuel CPT_HIDPI_FACTOR={manual:.2f}")
+                return manual
+        except ValueError:
+            print(f"[CPT-Scaling] CPT_HIDPI_FACTOR invalide : {env_override!r}")
 
-        # Sur macOS Retina, tk_scaling ≈ 2.0 (144/72).
-        # Sur Linux/X11, tk_scaling reflète le DPI système (souvent 1.0 ou 1.33).
-        # On utilise tk_scaling comme indicateur principal.
-        if sys.platform == 'darwin':
-            # macOS : tk scaling est directement le facteur Retina
-            factor = tk_scaling if tk_scaling > 1.0 else 1.0
-        else:
-            # Linux / Windows : tk_scaling est souvent 1.0 même sur HiDPI
-            # On se fie au ratio DPI physique / 96 (référence Windows/Linux)
-            factor = max(1.0, physical_dpi / 96.0) if physical_dpi > 110 else 1.0
+    # --- Détection empirique ---
+    try:
+        # Taille attendue par matplotlib (en pixels)
+        fig_w_inches, fig_h_inches = fig.get_size_inches()
+        expected_w = fig_w_inches * fig.dpi
+        expected_h = fig_h_inches * fig.dpi
 
-        return float(factor)
+        # Taille réelle du widget Tk (pixels écran)
+        tk_w = canvas_widget.winfo_width()
+        tk_h = canvas_widget.winfo_height()
+
+        # Avant que le layout ne soit finalisé, winfo peut renvoyer 1×1
+        if tk_w <= 1 or tk_h <= 1:
+            print(f"[CPT-Scaling] Canvas pas encore realized "
+                  f"(winfo={tk_w}×{tk_h}), fallback 1.0")
+            return 1.0
+
+        # Le ratio pertinent : la figure matplotlib produit expected_w pixels,
+        # mais le widget Tk n'affiche que tk_w pixels logiques.
+        # Si tk_w << expected_w, Tk compresse le bitmap → le scaling est
+        # ratio = expected / tk.  Ex: expected=2000, tk=1000 → factor=2.0
+        ratio_w = expected_w / tk_w
+        ratio_h = expected_h / tk_h
+        factor = (ratio_w + ratio_h) / 2.0   # moyenne des deux axes
+
+        # Arrondir aux paliers courants (1.0, 1.25, 1.5, 2.0, 2.5, 3.0)
+        # pour éviter les artefacts dus à l'imprécision des winfo
+        SNAP_VALUES = [1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0]
+        snapped = min(SNAP_VALUES, key=lambda s: abs(factor - s))
+        # Ne snapper que si l'écart est < 15 %
+        if abs(factor - snapped) / max(factor, 0.01) < 0.15:
+            factor = snapped
+
+        print(f"[CPT-Scaling] Canvas empirique: "
+              f"fig_expected={expected_w:.0f}×{expected_h:.0f} px, "
+              f"tk_widget={tk_w}×{tk_h} px, "
+              f"ratio_w={ratio_w:.2f}, ratio_h={ratio_h:.2f} → factor={factor:.2f}")
+        return max(1.0, factor)
 
     except Exception as e:
-        print(f"[CPT-Scaling] Impossible de détecter le scaling Tk : {e}")
+        print(f"[CPT-Scaling] Détection empirique échouée : {e}")
         return 1.0
 
 
-def _apply_hidpi_correction(cfg: CPTPlotConfig, factor: float) -> CPTPlotConfig:
+def _apply_hidpi_correction(fig, cfg: CPTPlotConfig, factor: float) -> CPTPlotConfig:
     """
-    Renvoie une copie corrigée de CPTPlotConfig pour compenser le scaling Tk.
+    Corrige le DPI de la figure *déjà créée* et renvoie un CPTPlotConfig ajusté.
 
-    Stratégie principale : diviser figure_dpi par le facteur.
-    Ajustement complémentaire : réduire légèrement les linewidths de grille
-    (le DPI seul ne corrige pas parfaitement l'épaisseur perçue des traits fins).
+    Stratégie :
+      - DPI figure ÷ factor  (correction principale : polices et ticks)
+      - linewidths × (1/factor)^0.4 (correction fine : traits / grilles)
     """
-    if factor <= 1.0:
-        print(f"[CPT-Scaling] factor={factor:.2f} → aucune correction appliquée")
+    if factor <= 1.05:
+        print(f"[CPT-Scaling] factor={factor:.2f} ≤ 1.05 → aucune correction")
         return cfg
 
-    inv = 1.0 / factor  # ex. 0.5 pour Retina ×2
+    inv = 1.0 / factor
 
     from dataclasses import replace
+    new_dpi = max(72, int(cfg.figure_dpi * inv))
+
     corrected = replace(
         cfg,
-        figure_dpi=max(72, int(cfg.figure_dpi * inv)),
-        # Ajustement fin des épaisseurs de grille / traits
-        # (le DPI corrige la taille globale, mais les traits fins
-        #  restent un peu trop épais après upscale ; on compense ~70 %)
+        figure_dpi=new_dpi,
         qc_linewidth=cfg.qc_linewidth * (inv ** 0.4),
         qst_linewidth=cfg.qst_linewidth * (inv ** 0.4),
     )
 
-    print(f"[CPT-Scaling] factor={factor:.2f} | "
-          f"dpi: {cfg.figure_dpi}→{corrected.figure_dpi} | "
-          f"qc_lw: {cfg.qc_linewidth:.2f}→{corrected.qc_linewidth:.2f} | "
-          f"qst_lw: {cfg.qst_linewidth:.2f}→{corrected.qst_linewidth:.2f}")
+    # Appliquer le nouveau DPI à la figure existante
+    fig.set_dpi(new_dpi)
+
+    print(f"[CPT-Scaling] Correction appliquée (factor={factor:.2f}): "
+          f"dpi {cfg.figure_dpi}→{new_dpi}, "
+          f"qc_lw {cfg.qc_linewidth:.2f}→{corrected.qc_linewidth:.2f}, "
+          f"qst_lw {cfg.qst_linewidth:.2f}→{corrected.qst_linewidth:.2f}")
 
     return corrected
 
@@ -331,6 +379,7 @@ class CPTCleaningView(ctk.CTkFrame):
         self.cpt_entries: list[CPTFileEntry] = []
         self.current_index = -1
         self.list_items: list[FileListItem] = []
+        self._hidpi_factor: float = 1.0
         self._bindings_installed = False
 
         # Layout 2 colonnes
@@ -514,11 +563,6 @@ class CPTCleaningView(ctk.CTkFrame):
         chart_frame = ctk.CTkFrame(chart_area, fg_color=COLORS["card"], corner_radius=8)
         chart_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # --- HiDPI correction -------------------------------------------
-        self._hidpi_factor = _detect_tk_scaling(self)
-        self.cfg = _apply_hidpi_correction(self.cfg, self._hidpi_factor)
-        # -----------------------------------------------------------------
-
         # Matplotlib figure (dimensions et marges depuis CPTPlotConfig)
         cfg = self.cfg
         self.fig = Figure(
@@ -538,6 +582,20 @@ class CPTCleaningView(ctk.CTkFrame):
         self.canvas = FigureCanvasTkAgg(self.fig, master=chart_frame)
         self.canvas.draw()
         self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=8)
+
+        # --- HiDPI correction (différée après realize) ---------------------
+        # update_idletasks() force le layout Tk → le widget a sa taille finale
+        _log_tk_metrics(self)
+        self.update_idletasks()
+        self._hidpi_factor = _detect_hidpi_factor(
+            self.canvas.get_tk_widget(), self.fig
+        )
+        self.cfg = _apply_hidpi_correction(self.fig, self.cfg, self._hidpi_factor)
+        # Si le DPI a changé, on force un re-draw pour que le canvas
+        # prenne en compte la nouvelle résolution du bitmap
+        if self._hidpi_factor > 1.05:
+            self.canvas.draw()
+        # -----------------------------------------------------------------
 
     # --------------------------------------------------------- bindings
 
