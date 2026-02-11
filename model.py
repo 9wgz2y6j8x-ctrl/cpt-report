@@ -342,7 +342,7 @@ class AppModel:
         self.current_sort_type = None
 
         # MODIFICATION : Ajout du nouveau workspace "RECHERCHE RAPIDE"
-        self.workspaces = ["DONNÉES BRUTES", "OBSERVATIONS", "EXTRACTIONS", "TRAITER", "RECHERCHE RAPIDE", "PREFERENCES"]
+        self.workspaces = ["DONNÉES BRUTES", "FILTRER", "OBSERVATIONS", "EXTRACTIONS", "TRAITER", "RECHERCHE RAPIDE", "PREFERENCES"]
 
         # Attributs pour l'indexeur CPT
         self.cpt_indexer = None

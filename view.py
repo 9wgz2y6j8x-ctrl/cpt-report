@@ -6,6 +6,7 @@ import tkinter as tk
 import threading
 from model import get_resource_path
 from settings_view import SettingsView
+from cpt_cleaning_view import CPTCleaningView
 
 
 class TopMenuView(ctk.CTkFrame):
@@ -41,7 +42,7 @@ class TopMenuView(ctk.CTkFrame):
 
         self.menu_action_buttons = ctk.CTkSegmentedButton(
             self.segmented_button_frame,
-            values=["DONNÉES BRUTES", "OBSERVATIONS", "EXTRACTIONS", "TRAITER"],
+            values=["DONNÉES BRUTES", "FILTRER", "OBSERVATIONS", "EXTRACTIONS", "TRAITER"],
             command=self.on_menu_action_changed,
             font=self.model.main_menu_font,
             fg_color="#404040",
@@ -2835,6 +2836,11 @@ class AppView(ctk.CTk):
         self.raw_data_view = RawDataWorkspaceView(workspace1, self.model, self.presenter)
         self.raw_data_view.pack(fill="both", expand=True)
 
+        # Workspace FILTRER (nettoyage des valeurs aberrantes)
+        workspace_filtrer = ctk.CTkFrame(parent, fg_color="#E8EDF2", corner_radius=0)
+        self.cleaning_view = CPTCleaningView(workspace_filtrer, self.model, self.presenter)
+        self.cleaning_view.pack(fill="both", expand=True)
+
         # Workspace 2 : OBSERVATIONS
         workspace2 = ctk.CTkFrame(parent, fg_color="blue", corner_radius=0)
 
@@ -2864,6 +2870,7 @@ class AppView(ctk.CTk):
         # Dictionnaire des workspaces
         self.workspaces = {
             "DONNÉES BRUTES": workspace1,
+            "FILTRER": workspace_filtrer,
             "OBSERVATIONS": workspace2,
             "EXTRACTIONS": workspace3,
             "TRAITER": workspace4,
@@ -2874,11 +2881,19 @@ class AppView(ctk.CTk):
     def display_workspace(self, workspace_name):
         """Affiche l'espace de travail demandé, masque les autres."""
         if hasattr(self, 'workspaces'):
+            # Notifier la vue FILTRER quand on la quitte
+            if hasattr(self, 'cleaning_view'):
+                self.cleaning_view.on_workspace_hidden()
+
             for workspace in self.workspaces.values():
                 workspace.place_forget()
             workspace = self.workspaces.get(workspace_name)
             if workspace:
                 workspace.place(x=0, y=0, relwidth=1, relheight=1)
+
+            # Notifier la vue FILTRER quand on y arrive
+            if workspace_name == "FILTRER" and hasattr(self, 'cleaning_view'):
+                self.cleaning_view.on_workspace_shown()
 
     def focus_search_entry(self):
         """Met le focus sur le champ de recherche."""
