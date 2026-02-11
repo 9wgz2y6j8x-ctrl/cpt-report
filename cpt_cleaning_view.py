@@ -244,7 +244,10 @@ class CPTCleaningView(ctk.CTkFrame):
 
         self.model = model
         self.presenter = presenter
-        self.cfg = CPTPlotConfig()
+        self.cfg = CPTPlotConfig(
+            figure_dpi=100,          # Ecran, pas export PDF
+            show_titles=False,       # Titre redondant avec la toolbar
+        )
         self.cpt_entries: list[CPTFileEntry] = []
         self.current_index = -1
         self.list_items: list[FileListItem] = []
