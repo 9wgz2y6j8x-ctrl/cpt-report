@@ -437,11 +437,16 @@ class CPTCleaningView(ctk.CTkFrame):
         chart_frame = ctk.CTkFrame(chart_area, fg_color=COLORS["card"], corner_radius=8)
         chart_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # Matplotlib figure (dimensions et marges depuis CPTPlotConfig)
+        # Matplotlib figure pour affichage écran
+        # On utilise un DPI écran (~100) au lieu de cfg.figure_dpi (200, prévu
+        # pour l'export PDF).  TkAgg redimensionne la figure pour remplir le
+        # widget : avec DPI 100, une zone de 600 px → 6" → polices/grilles
+        # proportionnées.  Avec DPI 200, 600 px → 3" → tout parait 2× trop gros.
         cfg = self.cfg
+        _screen_dpi = 100
         self.fig = Figure(
             figsize=(cfg.figure_width, cfg.figure_height),
-            dpi=cfg.figure_dpi,
+            dpi=_screen_dpi,
             facecolor=COLORS["card"]
         )
         self.fig.subplots_adjust(
