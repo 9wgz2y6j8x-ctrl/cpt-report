@@ -583,19 +583,47 @@ class CPTCleaningView(ctk.CTkFrame):
         self.canvas.draw()
         self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=8)
 
-        # --- HiDPI correction (différée après realize) ---------------------
-        # update_idletasks() force le layout Tk → le widget a sa taille finale
+        # --- HiDPI correction (différée au premier <Configure>) -----------
+        # Le canvas n'a pas encore de taille réelle pendant __init__.
+        # On attend le premier événement <Configure> (= le widget reçoit
+        # sa vraie taille du window manager) pour mesurer et corriger.
         _log_tk_metrics(self)
-        self.update_idletasks()
+        self._hidpi_correction_done = False
+        self.canvas.get_tk_widget().bind(
+            '<Configure>', self._on_canvas_first_configure
+        )
+        # -----------------------------------------------------------------
+
+    # ----------------------------------------------- HiDPI deferred correction
+
+    def _on_canvas_first_configure(self, event):
+        """Appelé au premier <Configure> réel du canvas Tk (taille > 1×1).
+
+        Compare la taille bitmap attendue (fig) vs la taille widget (Tk)
+        pour détecter le facteur HiDPI, puis corrige le DPI de la figure.
+        Se désinscrit automatiquement après la première correction.
+        """
+        if self._hidpi_correction_done:
+            return
+        # Ignorer les événements avec taille nulle (pas encore realized)
+        if event.width <= 1 or event.height <= 1:
+            return
+
+        self._hidpi_correction_done = True
+        # Désinscription — on ne corrige qu'une seule fois
+        self.canvas.get_tk_widget().unbind('<Configure>')
+
         self._hidpi_factor = _detect_hidpi_factor(
             self.canvas.get_tk_widget(), self.fig
         )
         self.cfg = _apply_hidpi_correction(self.fig, self.cfg, self._hidpi_factor)
-        # Si le DPI a changé, on force un re-draw pour que le canvas
-        # prenne en compte la nouvelle résolution du bitmap
+
         if self._hidpi_factor > 1.05:
-            self.canvas.draw()
-        # -----------------------------------------------------------------
+            # Re-dessiner le chart courant si un sondage est déjà affiché
+            if self.current_index >= 0:
+                self._update_chart()
+            else:
+                self.canvas.draw()
 
     # --------------------------------------------------------- bindings
 
