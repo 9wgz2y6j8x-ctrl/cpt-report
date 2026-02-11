@@ -244,7 +244,9 @@ class CPTCleaningView(ctk.CTkFrame):
 
         self.model = model
         self.presenter = presenter
-        self.cfg = CPTPlotConfig()
+        self.cfg = CPTPlotConfig(
+            show_titles=False,       # Titre redondant avec la toolbar
+        )
         self.cpt_entries: list[CPTFileEntry] = []
         self.current_index = -1
         self.list_items: list[FileListItem] = []
@@ -690,9 +692,12 @@ class CPTCleaningView(ctk.CTkFrame):
         self._configure_axes(entry)
 
         if entry.is_filtered and entry.df_filtered is not None:
-            # Brut transparent (memes couleurs config, alpha reduit)
+            # Brut en gris leger et plus fin
             self._plot_data(entry, entry.df_raw,
-                            alpha=0.35, label_suffix=" (brut)")
+                            color_qc='#C0C0C0', color_qst='#D8D8D8',
+                            lw_qc=cfg.qc_linewidth * 0.6,
+                            lw_qst=cfg.qst_linewidth * 0.6,
+                            alpha=0.7, label_suffix=" (brut)")
             # Filtre opaque (memes couleurs config, linewidth augmentee pour contraste)
             self._plot_data(entry, entry.df_filtered,
                             lw_qc=cfg.qc_linewidth * 1.25,
