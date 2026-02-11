@@ -38,11 +38,6 @@ COLORS = {
     "text_tertiary": "#9CA3AF",
     "selected_bg": "#C7D7E8",
     "divider": "#CBD5E1",
-    # Graphique
-    "qc_raw": "#94A3B8",
-    "fs_raw": "#CBD5E1",
-    "qc_filtered": "#0115B8",
-    "fs_filtered": "#F59E0B",
 }
 
 FONTS = {
@@ -249,6 +244,7 @@ class CPTCleaningView(ctk.CTkFrame):
 
         self.model = model
         self.presenter = presenter
+        self.cfg = CPTPlotConfig()
         self.cpt_entries: list[CPTFileEntry] = []
         self.current_index = -1
         self.list_items: list[FileListItem] = []
@@ -435,12 +431,21 @@ class CPTCleaningView(ctk.CTkFrame):
         chart_frame = ctk.CTkFrame(chart_area, fg_color=COLORS["card"], corner_radius=8)
         chart_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # Matplotlib figure
-        self.fig = Figure(figsize=(10, 8), dpi=100, facecolor=COLORS["card"])
-        self.fig.subplots_adjust(left=0.10, right=0.88, top=0.94, bottom=0.08)
+        # Matplotlib figure (dimensions et marges depuis CPTPlotConfig)
+        cfg = self.cfg
+        self.fig = Figure(
+            figsize=(cfg.figure_width, cfg.figure_height),
+            dpi=cfg.figure_dpi,
+            facecolor=COLORS["card"]
+        )
+        self.fig.subplots_adjust(
+            left=cfg.adjust_left, right=cfg.adjust_right,
+            top=cfg.adjust_top, bottom=cfg.adjust_bottom
+        )
 
-        self.ax_qc = self.fig.add_subplot(111)
-        self.ax_qst = self.ax_qc.twiny()
+        # Axes conformes a plot_cpt() : ax1=Qst (bas), ax2=qc (haut/twiny)
+        self.ax_qst = self.fig.add_subplot(111)
+        self.ax_qc = self.ax_qst.twiny()
 
         self.canvas = FigureCanvasTkAgg(self.fig, master=chart_frame)
         self.canvas.draw()
@@ -543,85 +548,140 @@ class CPTCleaningView(ctk.CTkFrame):
     # -------------------------------------------------------- chart drawing
 
     def _clear_chart(self):
-        self.ax_qc.clear()
         self.ax_qst.clear()
+        self.ax_qc.clear()
         self.canvas.draw_idle()
 
     def _configure_axes(self, entry: CPTFileEntry):
-        """Configure les axes selon les conventions de cpt_plot.py."""
-        cfg = CPTPlotConfig()
+        """Configure les axes en reproduisant fidelement plot_cpt() via CPTPlotConfig."""
+        cfg = self.cfg
 
-        # Axe principal (bas) = qc
-        self.ax_qc.set_xlabel(cfg.xlabel_qc, fontweight='bold', fontsize=11,
-                              color=COLORS["qc_filtered"])
-        self.ax_qc.set_ylabel(cfg.ylabel, fontweight='bold', fontsize=11)
-        self.ax_qc.invert_yaxis()
-        self.ax_qc.tick_params(axis='x', labelcolor=COLORS["qc_filtered"])
-
-        # Grille (style cpt_plot)
-        self.ax_qc.grid(False)
-        self.ax_qc.yaxis.grid(True, linestyle='--', linewidth=0.65,
-                               color='lightgray', dashes=(4, 7))
-
-        # Axe secondaire (haut) = qst
-        self.ax_qst.set_xlabel(cfg.xlabel_qst, fontweight='bold', fontsize=11,
-                               color=COLORS["fs_filtered"])
-        self.ax_qst.tick_params(axis='x', labelcolor=COLORS["fs_filtered"])
-        self.ax_qst.xaxis.grid(True, which='major', linestyle='--',
-                                linewidth=0.65, color='lightgray', dashes=(4, 7))
-        self.ax_qst.xaxis.grid(True, which='minor', linestyle='--',
-                                linewidth=0.65, color='lightgray', dashes=(4, 7))
-
-        # Limites et ticks
-        if entry.df_raw is not None:
-            max_depth = entry.df_raw[entry.col_depth].max()
-            depth_limit = cfg.get_depth_limit(max_depth)
-            self.ax_qc.set_ylim(depth_limit, 0)
-        self.ax_qc.yaxis.set_major_locator(MultipleLocator(1))
+        # -- ax_qc = axe secondaire (haut, twiny) -- identique a ax2 de plot_cpt()
+        self.ax_qc.spines['top'].set_position(('outward', 0))
+        self.ax_qc.xaxis.set_ticks_position('top')
+        self.ax_qc.xaxis.set_label_position('top')
 
         self.ax_qc.set_xlim(0, cfg.qc_max)
         self.ax_qc.xaxis.set_major_locator(MultipleLocator(5))
         self.ax_qc.xaxis.set_minor_locator(MultipleLocator(1))
 
+        # Ticks qc formates en entiers gras (lignes 373-380 de cpt_plot)
+        qc_ticks = list(range(0, int(cfg.qc_max) + 1, 5))
+        if cfg.qc_max not in qc_ticks:
+            qc_ticks.append(cfg.qc_max)
+        self.ax_qc.set_xticks(qc_ticks)
+        qc_labels = [int(t) if t == int(t) else t for t in qc_ticks]
+        self.ax_qc.set_xticklabels(qc_labels, fontweight='bold')
+
+        self.ax_qc.set_xlabel(cfg.xlabel_qc, fontweight='light',
+                              fontsize=cfg.label_fontsize, labelpad=5)
+        self.ax_qc.tick_params(axis='x', which='major', labelsize=cfg.tick_label_fontsize)
+
+        # Grille verticale sur ax_qc (major + minor)
+        self.ax_qc.xaxis.grid(True, which='minor', linestyle='--',
+                               linewidth=0.65, color='lightgray', dashes=(4, 7))
+        self.ax_qc.xaxis.grid(True, which='major', linestyle='--',
+                               linewidth=0.65, color='lightgray', dashes=(4, 7))
+
+        # -- ax_qst = axe principal (bas) -- identique a ax1 de plot_cpt()
+        self.ax_qst.invert_yaxis()
+        self.ax_qst.grid(False)
+        self.ax_qst.yaxis.grid(True, linestyle='--', linewidth=0.65,
+                                color='lightgray', dashes=(4, 7))
+
         self.ax_qst.set_xlim(0, cfg.qst_max)
         self.ax_qst.xaxis.set_major_locator(MultipleLocator(25))
         self.ax_qst.xaxis.set_minor_locator(MultipleLocator(5))
+        self.ax_qst.xaxis.set_tick_params(which='minor', labelbottom=False)
 
-    def _plot_data(self, entry, df, color_qc, color_qst, alpha, linewidth, label_suffix=""):
-        """Trace qc et qst sur les axes."""
+        self.ax_qst.set_xlabel(cfg.xlabel_qst, fontweight='light',
+                               fontsize=cfg.label_fontsize, labelpad=5)
+        self.ax_qst.set_ylabel(cfg.ylabel, fontweight='light',
+                               fontsize=cfg.label_fontsize, labelpad=5)
+
+        self.ax_qst.tick_params(axis='x', which='major', labelsize=cfg.tick_label_fontsize)
+        self.ax_qst.tick_params(axis='y', which='major', labelsize=cfg.tick_label_fontsize)
+
+        # Limites Y (profondeur) via get_depth_limit()
+        if entry.df_raw is not None:
+            max_depth = entry.df_raw[entry.col_depth].max()
+            depth_limit = cfg.get_depth_limit(max_depth)
+            self.ax_qst.set_ylim(depth_limit, 0)
+        self.ax_qst.yaxis.set_major_locator(MultipleLocator(1))
+
+    def _plot_data(self, entry, df, color_qc=None, color_qst=None,
+                   lw_qc=None, lw_qst=None, alpha=1.0, label_suffix=""):
+        """Trace qc et qst sur les axes (trait plein, styles depuis CPTPlotConfig)."""
+        cfg = self.cfg
         depth = df[entry.col_depth]
         qc = df[entry.col_qc]
         qst = df[entry.col_qst]
 
         zorder = 3 if alpha == 1.0 else 1
 
-        self.ax_qc.plot(
-            qc, depth,
-            color=color_qc, linewidth=linewidth, alpha=alpha,
-            label=f'qc{label_suffix}', zorder=zorder
-        )
+        # Axes conformes a plot_cpt() : qst sur ax_qst (bas), qc sur ax_qc (haut)
         self.ax_qst.plot(
             qst, depth,
-            color=color_qst, linewidth=linewidth, alpha=alpha,
-            label=f'Qst{label_suffix}', linestyle='--', zorder=zorder
+            color=color_qst or cfg.qst_color,
+            linewidth=lw_qst or cfg.qst_linewidth,
+            alpha=alpha, label=f'Qst{label_suffix}', zorder=zorder
         )
+        self.ax_qc.plot(
+            qc, depth,
+            color=color_qc or cfg.qc_color,
+            linewidth=lw_qc or cfg.qc_linewidth,
+            alpha=alpha, label=f'qc{label_suffix}', zorder=zorder
+        )
+
+    def _draw_annotations(self, entry, df):
+        """Annotations qc hors-limites, reproduit plot_cpt() lignes 406-425."""
+        cfg = self.cfg
+        if not cfg.show_annotations:
+            return
+
+        col_qc = entry.col_qc
+        col_depth = entry.col_depth
+
+        mask = df[col_qc] > cfg.qc_annotation_threshold
+        exceeded = df[mask][[col_qc, col_depth]]
+
+        if exceeded.empty:
+            return
+
+        last_annotated_depth = -float('inf')
+        for _, row in exceeded.iterrows():
+            current_depth = row[col_depth]
+            if current_depth - last_annotated_depth >= cfg.annotation_interval:
+                value_str = f"{row[col_qc]:{cfg.annotation_format}}"
+                self.ax_qc.annotate(
+                    value_str,
+                    (cfg.qc_max, current_depth),
+                    textcoords="offset points",
+                    xytext=(5, 0),
+                    ha='left', va='center',
+                    fontsize=cfg.annotation_fontsize,
+                    color='black',
+                    fontfamily='sans-serif',
+                    fontweight='bold'
+                )
+                last_annotated_depth = current_depth
 
     def _update_chart(self):
         if self.current_index < 0:
             return
 
+        cfg = self.cfg
         entry = self.cpt_entries[self.current_index]
 
-        self.ax_qc.clear()
         self.ax_qst.clear()
+        self.ax_qc.clear()
 
         if not entry.ensure_loaded():
-            # Afficher l'erreur sur le graphique
-            self.ax_qc.text(
+            self.ax_qst.text(
                 0.5, 0.5,
                 f"Impossible de charger :\n{entry.load_error or 'erreur inconnue'}",
-                transform=self.ax_qc.transAxes,
-                ha='center', va='center', fontsize=11,
+                transform=self.ax_qst.transAxes,
+                ha='center', va='center', fontsize=cfg.label_fontsize,
                 color=COLORS["text_secondary"], wrap=True
             )
             self.canvas.draw_idle()
@@ -630,24 +690,35 @@ class CPTCleaningView(ctk.CTkFrame):
         self._configure_axes(entry)
 
         if entry.is_filtered and entry.df_filtered is not None:
-            # Brut transparent + filtre opaque
+            # Brut transparent (memes couleurs config, alpha reduit)
             self._plot_data(entry, entry.df_raw,
-                            color_qc=COLORS["qc_raw"], color_qst=COLORS["fs_raw"],
-                            alpha=0.35, linewidth=1.2, label_suffix=" (brut)")
+                            alpha=0.35, label_suffix=" (brut)")
+            # Filtre opaque (memes couleurs config, linewidth augmentee pour contraste)
             self._plot_data(entry, entry.df_filtered,
-                            color_qc=COLORS["qc_filtered"], color_qst=COLORS["fs_filtered"],
-                            alpha=1.0, linewidth=2.0, label_suffix=" (filtre)")
+                            lw_qc=cfg.qc_linewidth * 1.25,
+                            lw_qst=cfg.qst_linewidth * 1.25,
+                            alpha=1.0, label_suffix=" (filtre)")
+            # Annotations sur les donnees filtrees
+            self._draw_annotations(entry, entry.df_filtered)
         else:
-            # Brut uniquement
-            self._plot_data(entry, entry.df_raw,
-                            color_qc=COLORS["qc_filtered"], color_qst=COLORS["fs_filtered"],
-                            alpha=1.0, linewidth=1.8)
+            # Brut uniquement (couleurs et linewidths directement depuis config)
+            self._plot_data(entry, entry.df_raw)
+            # Annotations sur les donnees brutes
+            self._draw_annotations(entry, entry.df_raw)
+
+        # Titre (si active dans la config)
+        if cfg.show_titles:
+            self.ax_qc.annotate(
+                cfg.title_main,
+                xy=(0.0, 1.08), xycoords='axes fraction',
+                ha='left', va='center', fontsize=cfg.title_fontsize
+            )
 
         # Legende
-        lines_qc, labels_qc = self.ax_qc.get_legend_handles_labels()
         lines_qst, labels_qst = self.ax_qst.get_legend_handles_labels()
-        if labels_qc or labels_qst:
-            self.ax_qc.legend(lines_qc + lines_qst, labels_qc + labels_qst,
-                              loc='lower right', fontsize=9, framealpha=0.95)
+        lines_qc, labels_qc = self.ax_qc.get_legend_handles_labels()
+        if labels_qst or labels_qc:
+            self.ax_qst.legend(lines_qst + lines_qc, labels_qst + labels_qc,
+                               loc='lower right', fontsize=9, framealpha=0.95)
 
         self.canvas.draw_idle()
