@@ -229,22 +229,22 @@ def _hampel_outlier_detection_enhanced(data, window_size, k, verbose=False):
 
     return outliers
 
+if __name__ == "__main__":
+    # Utilisation directe avec votre DataFrame existant
+    print(f"DataFrame original: {len(df)} lignes")
 
-# Utilisation directe avec votre DataFrame existant
-print(f"DataFrame original: {len(df)} lignes")
+    # Appliquer le filtre de Hampel avec interpolation
+    df_filtered_hard, filter_stats = hampel_peak_filter_aggressive(
+        df,
+        columns=[1, 2],
+        window_size=4,
+        k=1.9,
+        method='linear',
+        multi_pass=True,  # Plusieurs passes
+        verbose=True      # Diagnostics détaillés
+    )
 
-# Appliquer le filtre de Hampel avec interpolation
-df_filtered_hard, filter_stats = hampel_peak_filter_aggressive(
-    df,
-    columns=[1, 2],
-    window_size=4,
-    k=1.9,
-    method='linear',
-    multi_pass=True,  # Plusieurs passes
-    verbose=True      # Diagnostics détaillés
-)
-
-print(f"\n=== RÉSULTATS FINAUX ===")
-print(f"Outliers totaux interpolés: {filter_stats['total_outliers']}")
-print(f"Passes effectuées: {filter_stats['passes_effectuees']}")
-print(f"Détail par colonne: {filter_stats['outliers_par_colonne']}")
+    print(f"\n=== RÉSULTATS FINAUX ===")
+    print(f"Outliers totaux interpolés: {filter_stats['total_outliers']}")
+    print(f"Passes effectuées: {filter_stats['passes_effectuees']}")
+    print(f"Détail par colonne: {filter_stats['outliers_par_colonne']}")
