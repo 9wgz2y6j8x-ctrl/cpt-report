@@ -53,7 +53,7 @@ class TopMenuView(ctk.CTkFrame):
             unselected_hover_color="blue",
             selected_color="grey",
         )
-        self.menu_action_buttons.pack(padx=135, fill="both", pady=12, expand=True)
+        self.menu_action_buttons.pack(padx=120, fill="both", pady=12, expand=True)
 
         # Ajout du Canvas pour le dégradé sous la barre de menu
         self.gradient_canvas = ctk.CTkCanvas(parent, height=self.model.gradient_height, highlightthickness=0)

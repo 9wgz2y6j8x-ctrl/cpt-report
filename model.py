@@ -328,7 +328,7 @@ class AppModel:
         self.menu_bg_color = "#262626"
         self.menu_height = 81
         self.window_bg_color = "#F2F2F2"
-        self.main_menu_font = ("Verdana", 17, "bold")
+        self.main_menu_font = ("Verdana", 15, "bold")
 
         # Paramètres du dégradé
         self.gradient_height = 11
