@@ -7,6 +7,7 @@ import threading
 from model import get_resource_path
 from settings_view import SettingsView
 from cpt_cleaning_view import CPTCleaningView
+from observations_view3 import ObservationsView
 from home_view import HomeView
 
 
@@ -3226,7 +3227,9 @@ class AppView(ctk.CTk):
         self.cleaning_view.pack(fill="both", expand=True)
 
         # Workspace 2 : OBSERVATIONS
-        workspace2 = ctk.CTkFrame(parent, fg_color="blue", corner_radius=0)
+        workspace2 = ctk.CTkFrame(parent, fg_color="#E8EDF2", corner_radius=0)
+        self.observations_view = ObservationsView(workspace2, self.model, self.presenter)
+        self.observations_view.pack(fill="both", expand=True)
 
         # Workspace 3 : EXTRACTIONS
         workspace3 = ctk.CTkFrame(parent, fg_color="white", corner_radius=0)
@@ -3266,9 +3269,11 @@ class AppView(ctk.CTk):
     def display_workspace(self, workspace_name):
         """Affiche l'espace de travail demandé, masque les autres."""
         if hasattr(self, 'workspaces'):
-            # Notifier la vue FILTRER quand on la quitte
+            # Notifier les vues quand on les quitte
             if hasattr(self, 'cleaning_view'):
                 self.cleaning_view.on_workspace_hidden()
+            if hasattr(self, 'observations_view'):
+                self.observations_view.on_workspace_hidden()
 
             for workspace in self.workspaces.values():
                 workspace.place_forget()
@@ -3276,9 +3281,11 @@ class AppView(ctk.CTk):
             if workspace:
                 workspace.place(x=0, y=0, relwidth=1, relheight=1)
 
-            # Notifier la vue FILTRER quand on y arrive
+            # Notifier les vues quand on y arrive
             if workspace_name == "FILTRER" and hasattr(self, 'cleaning_view'):
                 self.cleaning_view.on_workspace_shown()
+            if workspace_name == "OBSERVATIONS" and hasattr(self, 'observations_view'):
+                self.observations_view.on_workspace_shown()
 
     def focus_search_entry(self):
         """Met le focus sur le champ de recherche."""
