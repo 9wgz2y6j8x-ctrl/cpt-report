@@ -1,5 +1,6 @@
 import random
 import queue
+from datetime import datetime
 from typing import List, Dict, Optional, Callable
 from cpt_files_indexer import CPTFilesIndexer
 from settings_manager import SettingsManager
@@ -338,12 +339,12 @@ class AppModel:
         self.gradient_prolong_ratio = 0.35
 
         # État de l'application
-        self.current_workspace = "DONNÉES BRUTES"
+        self.current_workspace = "ACCUEIL"
         self.search_text = ""
         self.current_sort_type = None
 
         # MODIFICATION : Ajout du nouveau workspace "RECHERCHE RAPIDE"
-        self.workspaces = ["DONNÉES BRUTES", "FILTRER", "OBSERVATIONS", "EXTRACTIONS", "TRAITER", "RECHERCHE RAPIDE", "PREFERENCES"]
+        self.workspaces = ["ACCUEIL", "DONNÉES BRUTES", "FILTRER", "OBSERVATIONS", "EXTRACTIONS", "TRAITER", "RECHERCHE RAPIDE", "PREFERENCES"]
 
         # Attributs pour l'indexeur CPT
         self.cpt_indexer = None
@@ -353,6 +354,7 @@ class AppModel:
             "progress": 0,
             "status": "not_started"
         }
+        self.last_indexing_completed = None  # datetime de la dernière indexation terminée
 
         # Configuration pour l'indexation
         self.cpt_cache_file = "cpt_index_cache.json"
@@ -421,6 +423,7 @@ class AppModel:
             """Callback appelé pour chaque fichier traité."""
             if total > 0:
                 percentage = (current / total) * 100
+                self.indexing_status["progress"] = percentage
                 self.gui_update_queue.put(("indexing_progress", {
                     "current": current,
                     "total": total,
@@ -440,7 +443,8 @@ class AppModel:
                 self.indexing_status["is_indexing"] = False
                 self.indexing_status["status"] = "completed"
                 self.indexing_status["result"] = result
-                
+                self.last_indexing_completed = datetime.now()
+
                 # Mettre le résultat dans la queue
                 self.gui_update_queue.put(("indexing_completed", result))
                 

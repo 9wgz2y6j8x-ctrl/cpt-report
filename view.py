@@ -7,6 +7,7 @@ import threading
 from model import get_resource_path
 from settings_view import SettingsView
 from cpt_cleaning_view import CPTCleaningView
+from home_view import HomeView
 
 
 class TopMenuView(ctk.CTkFrame):
@@ -3170,9 +3171,12 @@ class AppView(ctk.CTk):
                     text_color="#28a745"
                 )
 
+        # Afficher le workspace ACCUEIL au démarrage
+        self.display_workspace("ACCUEIL")
+
         # Liaison des événements globaux
         self.bind_events()
-        
+
         # Forcer le dessin initial du dégradé après un court délai
         self.after(100, self.draw_initial_gradient)
 
@@ -3206,6 +3210,11 @@ class AppView(ctk.CTk):
 
     def create_workspaces(self, parent):
         """Crée les différents onglets/espaces de travail dans un dictionnaire."""
+        # Workspace ACCUEIL
+        workspace_accueil = ctk.CTkFrame(parent, fg_color="#F2F2F2", corner_radius=0)
+        self.home_view = HomeView(workspace_accueil, self.model, self.presenter)
+        self.home_view.pack(fill="both", expand=True)
+
         # Workspace 1 - DONNÉES BRUTES
         workspace1 = ctk.CTkFrame(parent, fg_color="#F2F2F2", corner_radius=0)
         self.raw_data_view = RawDataWorkspaceView(workspace1, self.model, self.presenter)
@@ -3244,6 +3253,7 @@ class AppView(ctk.CTk):
 
         # Dictionnaire des workspaces
         self.workspaces = {
+            "ACCUEIL": workspace_accueil,
             "DONNÉES BRUTES": workspace1,
             "FILTRER": workspace_filtrer,
             "OBSERVATIONS": workspace2,
