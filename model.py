@@ -19,7 +19,7 @@ class RawDataManager:
     """
 
     # Champs éditables par l'utilisateur (correspondance clé interne -> label)
-    EDITABLE_FIELDS = ["Job Number", "TestNumber", "Date", "Location"]
+    EDITABLE_FIELDS = ["Job Number", "TestNumber", "Date", "Location", "Street"]
 
     def __init__(self):
         self._lock = threading.Lock()

@@ -192,9 +192,9 @@ class AppPresenter:
         # TODO: Implémenter la logique des réglages matériel
 
     def _handle_date_settings(self):
-        """Gère les réglages de date."""
-        print("Date des essais cliqué")
-        # TODO: Implémenter la logique des réglages de date
+        """Ouvre un sélecteur de date et applique la date choisie aux essais sélectionnés."""
+        if hasattr(self.view, 'raw_data_view'):
+            self.view.raw_data_view.show_date_picker()
 
     def _handle_manometer_settings(self):
         """Gère les réglages des manomètres."""
