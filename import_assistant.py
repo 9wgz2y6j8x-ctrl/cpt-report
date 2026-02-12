@@ -117,15 +117,15 @@ class ImportAssistant(tk.Toplevel):
         self._sheet_combo.bind("<<ComboboxSelected>>", lambda e: self._on_sheet_changed())
 
         # -- Section : options header --
-        opts_frame = tk.LabelFrame(
+        self._opts_frame = tk.LabelFrame(
             main, text="  Options de lecture  ", font=_FONTS["subtitle"],
             bg=_COLORS["bg"], fg=_COLORS["text"], padx=10, pady=6,
         )
-        opts_frame.pack(fill="x", pady=(0, 8))
+        self._opts_frame.pack(fill="x", pady=(0, 8))
 
         self._header_var = tk.BooleanVar(value=False)
         self._header_check = tk.Checkbutton(
-            opts_frame, text="La première ligne contient des noms de colonnes (en-tête)",
+            self._opts_frame, text="La première ligne contient des noms de colonnes (en-tête)",
             variable=self._header_var, font=_FONTS["body"],
             bg=_COLORS["bg"], activebackground=_COLORS["bg"],
             command=self._on_header_toggled,
@@ -263,7 +263,7 @@ class ImportAssistant(tk.Toplevel):
             if ext in (".xls", ".xlsx"):
                 self._sheet_names = get_excel_sheet_names(self.filepath)
                 if len(self._sheet_names) > 1:
-                    self._sheet_frame.pack(fill="x", pady=(0, 8), before=self._tree.master.master.master)
+                    self._sheet_frame.pack(fill="x", pady=(0, 8), before=self._opts_frame)
                     self._sheet_combo["values"] = self._sheet_names
                     self._sheet_var.set(self._sheet_names[0])
                 self._current_sheet = self._sheet_names[0] if self._sheet_names else None
