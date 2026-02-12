@@ -1,4 +1,6 @@
 import sys
+import os
+from tkinter import filedialog
 from model import AppModel
 from view import AppView
 
@@ -211,10 +213,97 @@ class AppPresenter:
         print("Import depuis clé USB cliqué")
         # TODO: Implémenter la logique
 
+    def _extract_metadata_from_000(self, meta_filepath):
+        """
+        Extrait les métadonnées d'un fichier .000.
+
+        Paramètres
+        ----------
+        meta_filepath : str
+            Chemin vers le fichier .000
+
+        Retours
+        -------
+        dict
+            Dictionnaire contenant les métadonnées extraites
+        """
+        required_keys = ["Job Number", "Date", "Location", "TestNumber", "Operator"]
+        metadata = {}
+
+        if not os.path.isfile(meta_filepath):
+            # Fichier .000 introuvable, retourner valeurs par défaut
+            return {key: "Non trouvé" for key in required_keys}
+
+        try:
+            with open(meta_filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                for line in f:
+                    for key in required_keys:
+                        if key not in metadata and key in line:
+                            parts = line.split(":", 1)
+                            if len(parts) > 1:
+                                metadata[key] = parts[1].strip()
+                            break
+                    if len(metadata) == len(required_keys):
+                        break
+
+            # Marquer les clés non trouvées
+            for key in required_keys:
+                if key not in metadata:
+                    metadata[key] = "Non trouvé"
+
+        except Exception as e:
+            print(f"Erreur lors de la lecture de {meta_filepath}: {e}")
+            metadata = {key: "Erreur" for key in required_keys}
+
+        return metadata
+
     def _handle_find_GEF_file(self):
-        """Gère la recherche de fichiers existants."""
-        print("Chercher un fichier GEF existant cliqué")
-        # TODO: Implémenter la logique de recherche de fichier
+        """
+        Gère la recherche de fichiers GEF via un dialogue de sélection.
+        Permet la sélection multiple de fichiers .GEF et les ajoute aux données brutes.
+        """
+        # Ouvrir le dialogue de sélection de fichiers
+        filepaths = filedialog.askopenfilenames(
+            title="Sélectionner des fichiers GEF",
+            filetypes=[
+                ("Fichiers GEF", "*.gef *.GEF"),
+                ("Tous les fichiers", "*.*")
+            ]
+        )
+
+        # Si aucun fichier n'est sélectionné, ne rien faire
+        if not filepaths:
+            return
+
+        # Préparer les données pour chaque fichier sélectionné
+        files_data = []
+        for filepath in filepaths:
+            # Vérifier que le fichier existe
+            if not os.path.isfile(filepath):
+                continue
+
+            # Chercher le fichier .000 correspondant
+            base_path = os.path.splitext(filepath)[0]
+            meta_filepath = base_path + ".000"
+
+            # Extraire les métadonnées du fichier .000 si disponible
+            metadata = self._extract_metadata_from_000(meta_filepath)
+
+            # Construire le dictionnaire de données pour ce fichier
+            file_data = {
+                "file_path": filepath,
+                "file_name": os.path.basename(filepath),
+                "meta_filepath": meta_filepath if os.path.isfile(meta_filepath) else None,
+                **metadata
+            }
+
+            files_data.append(file_data)
+
+        # Ajouter tous les fichiers aux données brutes
+        if files_data:
+            self.on_add_multiple_to_raw_data(files_data)
+        else:
+            self._show_toast("Aucun fichier GEF valide sélectionné")
 
     def _handle_new_measurements(self):
         """Gère la création de nouveaux fichiers de mesures."""
