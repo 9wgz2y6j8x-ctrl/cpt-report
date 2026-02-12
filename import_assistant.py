@@ -158,8 +158,8 @@ class ImportAssistant(ctk.CTkToplevel):
             dropdown_font=_FONTS["body"],
             fg_color=_COLORS["bg"],
             border_color=_COLORS["border"],
-            button_color=_COLORS["accent"],
-            button_hover_color=_COLORS["accent_hover"],
+            button_color=_COLORS["accent_light"],
+            button_hover_color=_COLORS["border"],
             command=lambda _: self._on_sheet_changed(),
         )
         self._sheet_combo.pack(side="left")
@@ -307,8 +307,8 @@ class ImportAssistant(ctk.CTkToplevel):
                 dropdown_font=_FONTS["body"],
                 fg_color=_COLORS["bg"],
                 border_color=_COLORS["border"],
-                button_color=_COLORS["accent"],
-                button_hover_color=_COLORS["accent_hover"],
+                button_color=_COLORS["accent_light"],
+                button_hover_color=_COLORS["border"],
             )
             combo.grid(row=i, column=1, sticky="w", pady=4)
             self._mapping_vars[key] = var
