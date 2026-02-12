@@ -58,10 +58,11 @@ class RawDataManager:
 
     # ──────────────────────── Ajout de fichiers ────────────────────────
 
-    # Résultat d'ajout : succès, doublon ou fichier GEF introuvable
+    # Résultat d'ajout : succès, doublon ou fichier introuvable
     ADD_OK = "ok"
     ADD_DUPLICATE = "duplicate"
-    ADD_GEF_MISSING = "gef_missing"
+    ADD_GEF_MISSING = "gef_missing"  # Rétro-compatible ; signifie "fichier introuvable"
+    ADD_FILE_MISSING = ADD_GEF_MISSING  # Alias générique
 
     def add_file(self, file_data: Dict) -> str:
         """
