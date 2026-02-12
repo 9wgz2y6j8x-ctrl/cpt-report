@@ -2,16 +2,16 @@
 import_assistant.py
 
 Assistant d'importation de fichiers tabulaires (CSV / Excel) pour CPT.
-Fenêtre Toplevel centrée avec :
+Fenêtre CTkToplevel centrée avec :
 - Aperçu des données
 - Statistiques
 - Mapping des colonnes (profondeur, qc, Qst/Qt)
 - Conversion Qt -> Qst si nécessaire
 """
 
-import tkinter as tk
+import customtkinter as ctk
 from tkinter import ttk, messagebox
-from typing import Optional, Dict, List, Callable
+from typing import Optional, Dict, List, Callable, Tuple
 from pathlib import Path
 import pandas as pd
 
@@ -25,13 +25,14 @@ from tabular_reader import (
 
 
 # ---------------------------------------------------------------------------
-# Couleurs et polices cohérentes avec l'application
+# Couleurs et polices cohérentes avec l'application principale
 # ---------------------------------------------------------------------------
 
 _COLORS = {
     "bg": "#F2F2F2",
     "card": "#FFFFFF",
     "accent": "#0115B8",
+    "accent_hover": "#0228E0",
     "accent_light": "#E8EDF8",
     "text": "#1A1A1A",
     "text_secondary": "#6B7280",
@@ -42,9 +43,9 @@ _COLORS = {
 }
 
 _FONTS = {
-    "title": ("Verdana", 14, "bold"),
-    "subtitle": ("Verdana", 11, "bold"),
-    "body": ("Verdana", 10),
+    "title": ("Verdana", 15, "bold"),
+    "subtitle": ("Verdana", 12, "bold"),
+    "body": ("Verdana", 11),
     "small": ("Verdana", 9),
     "mono": ("Consolas", 9),
 }
@@ -54,7 +55,7 @@ _FONTS = {
 # Assistant d'importation
 # ---------------------------------------------------------------------------
 
-class ImportAssistant(tk.Toplevel):
+class ImportAssistant(ctk.CTkToplevel):
     """
     Fenêtre assistant pour importer un fichier CSV/Excel comme essai CPT.
 
@@ -66,17 +67,28 @@ class ImportAssistant(tk.Toplevel):
 
     def __init__(
         self,
-        parent: tk.Tk,
+        parent,
         filepath: str,
         on_result: Callable[[Optional[Dict]], None],
+        *,
+        file_index: int = 1,
+        file_total: int = 1,
     ):
         super().__init__(parent)
         self.filepath = filepath
         self.on_result = on_result
+        self._file_index = file_index
+        self._file_total = file_total
 
-        self.title(f"Import — {Path(filepath).name}")
+        # Titre avec indicateur de progression multi-fichier
+        fname = Path(filepath).name
+        if file_total > 1:
+            self.title(f"Import — {fname}  ({file_index}/{file_total})")
+        else:
+            self.title(f"Import — {fname}")
+
         self.resizable(True, True)
-        self.configure(bg=_COLORS["bg"])
+        self.configure(fg_color=_COLORS["bg"])
         self.protocol("WM_DELETE_WINDOW", self._cancel)
         self.grab_set()
 
@@ -91,156 +103,263 @@ class ImportAssistant(tk.Toplevel):
 
         # Construire l'UI puis charger les données
         self._build_ui()
-        self._center_window(950, 720)
+        self._center_window(980, 760)
         self.after(100, self._load_file)
 
     # ------------------------------------------------------------------ UI
 
     def _build_ui(self):
-        # Conteneur principal avec scrollbar
-        main = tk.Frame(self, bg=_COLORS["bg"])
-        main.pack(fill="both", expand=True, padx=16, pady=12)
+        # Conteneur principal
+        main = ctk.CTkFrame(self, fg_color=_COLORS["bg"])
+        main.pack(fill="both", expand=True, padx=18, pady=14)
+
+        # -- Bandeau multi-fichier --
+        if self._file_total > 1:
+            counter_frame = ctk.CTkFrame(main, fg_color=_COLORS["accent_light"], corner_radius=8)
+            counter_frame.pack(fill="x", pady=(0, 10))
+
+            ctk.CTkLabel(
+                counter_frame,
+                text=f"Fichier {self._file_index} / {self._file_total}  —  {Path(self.filepath).name}",
+                font=_FONTS["subtitle"],
+                text_color=_COLORS["accent"],
+            ).pack(padx=14, pady=8)
+
+            # Barre de progression
+            progress_val = self._file_index / self._file_total
+            progress_bar = ctk.CTkProgressBar(
+                counter_frame,
+                width=400,
+                height=6,
+                progress_color=_COLORS["accent"],
+                fg_color=_COLORS["border"],
+                corner_radius=3,
+            )
+            progress_bar.pack(padx=14, pady=(0, 8), fill="x")
+            progress_bar.set(progress_val)
 
         # -- Section : sélection de feuille (Excel uniquement) --
-        self._sheet_frame = tk.LabelFrame(
-            main, text="  Feuille Excel  ", font=_FONTS["subtitle"],
-            bg=_COLORS["bg"], fg=_COLORS["text"], padx=10, pady=6,
-        )
+        self._sheet_frame = ctk.CTkFrame(main, fg_color=_COLORS["card"], corner_radius=8, border_width=1, border_color=_COLORS["border"])
         # Sera pack() seulement si Excel avec plusieurs feuilles
 
-        self._sheet_var = tk.StringVar()
-        self._sheet_combo = ttk.Combobox(
-            self._sheet_frame, textvariable=self._sheet_var,
-            state="readonly", width=40,
+        sheet_inner = ctk.CTkFrame(self._sheet_frame, fg_color="transparent")
+        sheet_inner.pack(fill="x", padx=14, pady=10)
+
+        ctk.CTkLabel(
+            sheet_inner, text="Feuille Excel", font=_FONTS["subtitle"],
+            text_color=_COLORS["text"],
+        ).pack(side="left", padx=(0, 12))
+
+        self._sheet_var = ctk.StringVar()
+        self._sheet_combo = ctk.CTkComboBox(
+            sheet_inner, variable=self._sheet_var,
+            state="readonly", width=300,
+            font=_FONTS["body"],
+            dropdown_font=_FONTS["body"],
+            fg_color=_COLORS["bg"],
+            border_color=_COLORS["border"],
+            button_color=_COLORS["accent"],
+            button_hover_color=_COLORS["accent_hover"],
+            command=lambda _: self._on_sheet_changed(),
         )
-        self._sheet_combo.pack(side="left", padx=(0, 10))
-        self._sheet_combo.bind("<<ComboboxSelected>>", lambda e: self._on_sheet_changed())
+        self._sheet_combo.pack(side="left")
 
         # -- Section : options header --
-        self._opts_frame = tk.LabelFrame(
-            main, text="  Options de lecture  ", font=_FONTS["subtitle"],
-            bg=_COLORS["bg"], fg=_COLORS["text"], padx=10, pady=6,
-        )
+        self._opts_frame = ctk.CTkFrame(main, fg_color=_COLORS["card"], corner_radius=8, border_width=1, border_color=_COLORS["border"])
         self._opts_frame.pack(fill="x", pady=(0, 8))
 
-        self._header_var = tk.BooleanVar(value=False)
-        self._header_check = tk.Checkbutton(
-            self._opts_frame, text="La première ligne contient des noms de colonnes (en-tête)",
+        opts_inner = ctk.CTkFrame(self._opts_frame, fg_color="transparent")
+        opts_inner.pack(fill="x", padx=14, pady=10)
+
+        ctk.CTkLabel(
+            opts_inner, text="Options de lecture", font=_FONTS["subtitle"],
+            text_color=_COLORS["text"],
+        ).pack(anchor="w", pady=(0, 6))
+
+        self._header_var = ctk.BooleanVar(value=False)
+        self._header_check = ctk.CTkCheckBox(
+            opts_inner,
+            text="La première ligne contient des noms de colonnes (en-tête)",
             variable=self._header_var, font=_FONTS["body"],
-            bg=_COLORS["bg"], activebackground=_COLORS["bg"],
+            text_color=_COLORS["text"],
+            fg_color=_COLORS["accent"],
+            hover_color=_COLORS["accent_hover"],
             command=self._on_header_toggled,
         )
         self._header_check.pack(anchor="w")
 
         # -- Section : aperçu --
-        preview_frame = tk.LabelFrame(
-            main, text="  Aperçu des données  ", font=_FONTS["subtitle"],
-            bg=_COLORS["bg"], fg=_COLORS["text"], padx=10, pady=6,
-        )
+        preview_frame = ctk.CTkFrame(main, fg_color=_COLORS["card"], corner_radius=8, border_width=1, border_color=_COLORS["border"])
         preview_frame.pack(fill="both", expand=True, pady=(0, 8))
 
-        # Treeview pour l'aperçu
-        tree_container = tk.Frame(preview_frame, bg=_COLORS["bg"])
+        preview_inner = ctk.CTkFrame(preview_frame, fg_color="transparent")
+        preview_inner.pack(fill="both", expand=True, padx=14, pady=10)
+
+        ctk.CTkLabel(
+            preview_inner, text="Aperçu des données", font=_FONTS["subtitle"],
+            text_color=_COLORS["text"],
+        ).pack(anchor="w", pady=(0, 6))
+
+        # Treeview pour l'aperçu (ttk — incontournable pour les tableaux)
+        tree_container = ctk.CTkFrame(preview_inner, fg_color="transparent")
         tree_container.pack(fill="both", expand=True)
 
-        self._tree_scroll_x = tk.Scrollbar(tree_container, orient="horizontal")
-        self._tree_scroll_y = tk.Scrollbar(tree_container, orient="vertical")
+        # Style ttk cohérent
+        style = ttk.Style(self)
+        style.theme_use("clam")
+        style.configure(
+            "Import.Treeview",
+            background=_COLORS["card"],
+            foreground=_COLORS["text"],
+            fieldbackground=_COLORS["card"],
+            font=_FONTS["mono"],
+            rowheight=22,
+            borderwidth=0,
+        )
+        style.configure(
+            "Import.Treeview.Heading",
+            background=_COLORS["accent_light"],
+            foreground=_COLORS["accent"],
+            font=("Verdana", 9, "bold"),
+            borderwidth=0,
+            relief="flat",
+        )
+        style.map(
+            "Import.Treeview",
+            background=[("selected", _COLORS["accent_light"])],
+            foreground=[("selected", _COLORS["accent"])],
+        )
+        style.map(
+            "Import.Treeview.Heading",
+            background=[("active", _COLORS["accent_light"])],
+        )
+
+        self._tree_scroll_x = ctk.CTkScrollbar(tree_container, orientation="horizontal")
+        self._tree_scroll_y = ctk.CTkScrollbar(tree_container, orientation="vertical")
 
         self._tree = ttk.Treeview(
             tree_container,
             show="headings",
+            style="Import.Treeview",
             height=self.PREVIEW_ROWS,
             xscrollcommand=self._tree_scroll_x.set,
             yscrollcommand=self._tree_scroll_y.set,
         )
-        self._tree_scroll_x.config(command=self._tree.xview)
-        self._tree_scroll_y.config(command=self._tree.yview)
+        self._tree_scroll_x.configure(command=self._tree.xview)
+        self._tree_scroll_y.configure(command=self._tree.yview)
 
         self._tree_scroll_y.pack(side="right", fill="y")
         self._tree.pack(side="top", fill="both", expand=True)
         self._tree_scroll_x.pack(side="bottom", fill="x")
 
         # -- Section : statistiques --
-        self._stats_label = tk.Label(
+        self._stats_label = ctk.CTkLabel(
             main, text="", font=_FONTS["small"],
-            bg=_COLORS["bg"], fg=_COLORS["text_secondary"],
+            text_color=_COLORS["text_secondary"],
             justify="left", anchor="w",
         )
         self._stats_label.pack(fill="x", pady=(0, 8))
 
         # -- Section : mapping colonnes --
-        mapping_frame = tk.LabelFrame(
-            main, text="  Mapping des colonnes (obligatoire)  ", font=_FONTS["subtitle"],
-            bg=_COLORS["bg"], fg=_COLORS["text"], padx=10, pady=8,
-        )
+        mapping_frame = ctk.CTkFrame(main, fg_color=_COLORS["card"], corner_radius=8, border_width=1, border_color=_COLORS["border"])
         mapping_frame.pack(fill="x", pady=(0, 4))
+
+        mapping_inner = ctk.CTkFrame(mapping_frame, fg_color="transparent")
+        mapping_inner.pack(fill="x", padx=14, pady=10)
+
+        ctk.CTkLabel(
+            mapping_inner, text="Mapping des colonnes (obligatoire)", font=_FONTS["subtitle"],
+            text_color=_COLORS["text"],
+        ).pack(anchor="w", pady=(0, 6))
 
         # Note cône 10 cm²
         note = (
             "Hypothèse cône 10 cm² : A = 0.001 m²  ⇒  1 MPa × A = 1 kN  "
             "⇒  valeurs numériques MPa ↔ kN identiques pour qc."
         )
-        tk.Label(
-            mapping_frame, text=note, font=_FONTS["small"],
-            bg=_COLORS["accent_light"], fg=_COLORS["accent"],
-            wraplength=880, justify="left", padx=8, pady=4,
-        ).pack(fill="x", pady=(0, 8))
+        note_frame = ctk.CTkFrame(mapping_inner, fg_color=_COLORS["accent_light"], corner_radius=6)
+        note_frame.pack(fill="x", pady=(0, 8))
+        ctk.CTkLabel(
+            note_frame, text=note, font=_FONTS["small"],
+            text_color=_COLORS["accent"],
+            wraplength=880, justify="left",
+        ).pack(padx=10, pady=6)
 
-        grid = tk.Frame(mapping_frame, bg=_COLORS["bg"])
+        grid = ctk.CTkFrame(mapping_inner, fg_color="transparent")
         grid.pack(fill="x")
 
-        self._mapping_vars: Dict[str, tk.StringVar] = {}
+        self._mapping_vars: Dict[str, ctk.StringVar] = {}
         labels = [
             ("depth", "Profondeur (m)"),
             ("qc", "qc (MPa)"),
             ("qst", "Qst (kN)  ou  Qt (kN)"),
         ]
         for i, (key, label) in enumerate(labels):
-            tk.Label(
+            ctk.CTkLabel(
                 grid, text=label, font=_FONTS["body"],
-                bg=_COLORS["bg"], fg=_COLORS["text"],
-            ).grid(row=i, column=0, sticky="w", pady=3, padx=(0, 12))
+                text_color=_COLORS["text"],
+            ).grid(row=i, column=0, sticky="w", pady=4, padx=(0, 14))
 
-            var = tk.StringVar()
-            combo = ttk.Combobox(grid, textvariable=var, state="readonly", width=35)
-            combo.grid(row=i, column=1, sticky="w", pady=3)
+            var = ctk.StringVar()
+            combo = ctk.CTkComboBox(
+                grid, variable=var, state="readonly", width=300,
+                font=_FONTS["body"],
+                dropdown_font=_FONTS["body"],
+                fg_color=_COLORS["bg"],
+                border_color=_COLORS["border"],
+                button_color=_COLORS["accent"],
+                button_hover_color=_COLORS["accent_hover"],
+            )
+            combo.grid(row=i, column=1, sticky="w", pady=4)
             self._mapping_vars[key] = var
             setattr(self, f"_combo_{key}", combo)
 
         # Checkbox Qt
-        self._is_qt_var = tk.BooleanVar(value=False)
-        qt_frame = tk.Frame(mapping_frame, bg=_COLORS["bg"])
+        self._is_qt_var = ctk.BooleanVar(value=False)
+        qt_frame = ctk.CTkFrame(mapping_inner, fg_color="transparent")
         qt_frame.pack(fill="x", pady=(8, 0))
 
-        self._qt_check = tk.Checkbutton(
+        self._qt_check = ctk.CTkCheckBox(
             qt_frame,
             text="La 3e colonne est Qt (résistance totale) — Qst sera calculé : Qst = Qt − qc",
             variable=self._is_qt_var, font=_FONTS["body"],
-            bg=_COLORS["bg"], activebackground=_COLORS["bg"],
+            text_color=_COLORS["text"],
+            fg_color=_COLORS["accent"],
+            hover_color=_COLORS["accent_hover"],
             command=self._on_qt_toggled,
         )
         self._qt_check.pack(anchor="w")
 
-        self._qt_info_label = tk.Label(
+        self._qt_info_label = ctk.CTkLabel(
             qt_frame, text="", font=_FONTS["small"],
-            bg=_COLORS["bg"], fg=_COLORS["success"],
+            text_color=_COLORS["success"],
             justify="left", anchor="w",
         )
-        self._qt_info_label.pack(fill="x", padx=(24, 0))
+        self._qt_info_label.pack(fill="x", padx=(28, 0))
 
         # -- Boutons --
-        btn_frame = tk.Frame(main, bg=_COLORS["bg"])
+        btn_frame = ctk.CTkFrame(main, fg_color="transparent")
         btn_frame.pack(fill="x", pady=(12, 0))
 
-        tk.Button(
+        ctk.CTkButton(
             btn_frame, text="Annuler", font=_FONTS["body"],
-            width=14, command=self._cancel,
+            width=140, height=38,
+            fg_color=_COLORS["card"],
+            hover_color=_COLORS["border"],
+            text_color=_COLORS["text"],
+            border_width=1,
+            border_color=_COLORS["border"],
+            corner_radius=8,
+            command=self._cancel,
         ).pack(side="left")
 
-        self._import_btn = tk.Button(
+        self._import_btn = ctk.CTkButton(
             btn_frame, text="Importer", font=_FONTS["subtitle"],
-            width=14, bg=_COLORS["accent"], fg="white",
-            activebackground="#0228E0", activeforeground="white",
+            width=160, height=38,
+            fg_color=_COLORS["accent"],
+            hover_color=_COLORS["accent_hover"],
+            text_color="white",
+            corner_radius=8,
             command=self._import,
         )
         self._import_btn.pack(side="right")
@@ -264,7 +383,7 @@ class ImportAssistant(tk.Toplevel):
                 self._sheet_names = get_excel_sheet_names(self.filepath)
                 if len(self._sheet_names) > 1:
                     self._sheet_frame.pack(fill="x", pady=(0, 8), before=self._opts_frame)
-                    self._sheet_combo["values"] = self._sheet_names
+                    self._sheet_combo.configure(values=self._sheet_names)
                     self._sheet_var.set(self._sheet_names[0])
                 self._current_sheet = self._sheet_names[0] if self._sheet_names else None
 
@@ -356,7 +475,7 @@ class ImportAssistant(tk.Toplevel):
 
     def _update_stats(self):
         if self._df_numeric is None:
-            self._stats_label.config(text="")
+            self._stats_label.configure(text="")
             return
 
         stats = compute_preview_stats(self._df_numeric, self._col_names)
@@ -374,7 +493,7 @@ class ImportAssistant(tk.Toplevel):
             else:
                 parts.append(f"  {label} : pas de valeurs numériques  NaN={n_nan}")
 
-        self._stats_label.config(text="\n".join(parts))
+        self._stats_label.configure(text="\n".join(parts))
 
     def _update_mapping_combos(self):
         options = []
@@ -383,7 +502,7 @@ class ImportAssistant(tk.Toplevel):
 
         for key in ("depth", "qc", "qst"):
             combo = getattr(self, f"_combo_{key}")
-            combo["values"] = options
+            combo.configure(values=options)
 
         # Auto-sélection par défaut (colonnes 1, 2, 3)
         n = len(options)
@@ -398,16 +517,16 @@ class ImportAssistant(tk.Toplevel):
 
     def _on_qt_toggled(self):
         if self._is_qt_var.get():
-            self._qt_info_label.config(
-                text="✓ Qst sera calculé comme Qst = Qt − qc et stocké pour le traitement/graphique.",
-                fg=_COLORS["success"],
+            self._qt_info_label.configure(
+                text="Qst sera calculé comme Qst = Qt - qc et stocké pour le traitement/graphique.",
+                text_color=_COLORS["success"],
             )
         else:
-            self._qt_info_label.config(text="")
+            self._qt_info_label.configure(text="")
 
     # --------------------------------------------------------- actions
 
-    def _parse_combo_index(self, var: tk.StringVar) -> Optional[int]:
+    def _parse_combo_index(self, var: ctk.StringVar) -> Optional[int]:
         """Extrait l'index 0-based depuis la valeur du combobox ('3 — nom')."""
         val = var.get()
         if not val:

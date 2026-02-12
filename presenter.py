@@ -331,6 +331,8 @@ class AppPresenter:
 
         # Traiter chaque fichier séquentiellement via l'assistant
         self._pending_imports = list(filepaths)
+        self._import_total = len(filepaths)
+        self._import_index = 0
         self._import_next_file()
 
     def _import_next_file(self):
@@ -339,6 +341,7 @@ class AppPresenter:
             return
 
         filepath = self._pending_imports.pop(0)
+        self._import_index += 1
         if not os.path.isfile(filepath):
             self._show_toast(f"Fichier introuvable : {os.path.basename(filepath)}")
             self._import_next_file()
@@ -352,7 +355,11 @@ class AppPresenter:
                 self.view.after(200, self._import_next_file)
 
         try:
-            ImportAssistant(self.view, filepath, on_result)
+            ImportAssistant(
+                self.view, filepath, on_result,
+                file_index=self._import_index,
+                file_total=self._import_total,
+            )
         except Exception as exc:
             self._show_toast(f"Erreur d'import : {exc}")
             self._import_next_file()
