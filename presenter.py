@@ -164,6 +164,7 @@ class AppPresenter:
             "capacity_settings": self._handle_capacity_settings,
             "quick_search": self._handle_quick_search,
             "usb_import": self._handle_usb_import,
+            "find_GEF_file": self._handle_find_GEF_file,
             "new_measurements": self._handle_new_measurements,
             "find_measurements": self._handle_find_measurements
         }
