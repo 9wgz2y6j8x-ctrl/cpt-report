@@ -23,6 +23,7 @@ from typing import Optional
 from gef_reader import read_gef_to_dataframe, GefFileError
 from despike_cleaning import hampel_peak_filter_aggressive
 from cpt_plot import CPTPlotConfig, _resolve_column_name
+from tabular_reader import load_cpt_dataframe
 
 # ---------------------------------------------------------------------------
 # Palette et typographie (identiques a la maquette)
@@ -71,6 +72,8 @@ class CPTFileEntry:
         self.job_number: str = raw_data_manager.get_effective_value(self.file_path, "Job Number")
         self.test_number: str = raw_data_manager.get_effective_value(self.file_path, "TestNumber")
         self.location: str = raw_data_manager.get_effective_value(self.file_path, "Location")
+        self.source_type: str = file_data.get("source_type", "gef")
+        self._file_data: dict = file_data
 
         self.is_filtered: bool = False
 
@@ -85,13 +88,13 @@ class CPTFileEntry:
     # -- chargement paresseux -------------------------------------------------
 
     def ensure_loaded(self):
-        """Charge le GEF si ce n'est pas deja fait. Retourne True si OK."""
+        """Charge le fichier (GEF ou tabulaire) si ce n'est pas deja fait. Retourne True si OK."""
         if self._df_raw is not None:
             return True
         if self._load_error is not None:
             return False
         try:
-            df = read_gef_to_dataframe(self.file_path)
+            df = load_cpt_dataframe(self._file_data)
             if df.empty:
                 self._load_error = "DataFrame vide"
                 return False

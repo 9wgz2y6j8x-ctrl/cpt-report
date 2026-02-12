@@ -3,6 +3,7 @@ import os
 from tkinter import filedialog
 from model import AppModel
 from view import AppView
+from import_assistant import ImportAssistant
 
 class AppPresenter:
     def __init__(self, model, view):
@@ -109,7 +110,7 @@ class AppPresenter:
         if result == rdm.ADD_OK:
             self._show_toast(f"'{name}' ajouté aux données brutes")
         elif result == rdm.ADD_GEF_MISSING:
-            self._show_toast(f"'{name}' : fichier GEF introuvable sur le disque")
+            self._show_toast(f"'{name}' : fichier introuvable sur le disque")
         else:
             self._show_toast(f"'{name}' est déjà dans les données brutes")
 
@@ -312,9 +313,49 @@ class AppPresenter:
         # TODO: Implémenter la logique de création de fichier
 
     def _handle_find_measurements(self):
-        """Gère la recherche de fichiers existants."""
-        print("Chercher un fichier existant cliqué")
-        # TODO: Implémenter la logique de recherche de fichier
+        """
+        Gère la recherche et l'import de fichiers Excel/CSV via un dialog
+        multi-sélection suivi d'un assistant d'import pour chaque fichier.
+        """
+        filepaths = filedialog.askopenfilenames(
+            title="Sélectionner des fichiers Excel ou CSV",
+            filetypes=[
+                ("Fichiers tabulaires", "*.csv *.xls *.xlsx *.CSV *.XLS *.XLSX"),
+                ("Fichiers CSV", "*.csv *.CSV"),
+                ("Fichiers Excel", "*.xls *.xlsx *.XLS *.XLSX"),
+                ("Tous les fichiers", "*.*"),
+            ],
+        )
+        if not filepaths:
+            return
+
+        # Traiter chaque fichier séquentiellement via l'assistant
+        self._pending_imports = list(filepaths)
+        self._import_next_file()
+
+    def _import_next_file(self):
+        """Lance l'assistant d'import pour le prochain fichier en attente."""
+        if not self._pending_imports:
+            return
+
+        filepath = self._pending_imports.pop(0)
+        if not os.path.isfile(filepath):
+            self._show_toast(f"Fichier introuvable : {os.path.basename(filepath)}")
+            self._import_next_file()
+            return
+
+        def on_result(file_data):
+            if file_data is not None:
+                self.on_add_to_raw_data(file_data)
+            # Lancer le suivant après un court délai
+            if self._pending_imports:
+                self.view.after(200, self._import_next_file)
+
+        try:
+            ImportAssistant(self.view, filepath, on_result)
+        except Exception as exc:
+            self._show_toast(f"Erreur d'import : {exc}")
+            self._import_next_file()
 
     def quit_app(self):
         """Ferme l'application."""
