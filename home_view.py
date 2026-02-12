@@ -37,9 +37,13 @@ class HomeView(ctk.CTkFrame):
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
-        # Conteneur centré vertical
+        # Spacer haut pour pousser le contenu vers ~40 % vertical
+        self._spacer_top = ctk.CTkFrame(self, fg_color="transparent", height=0)
+        self._spacer_top.pack(side="top", fill="x", expand=True)
+
+        # Conteneur centré horizontal
         container = ctk.CTkFrame(self, fg_color="transparent")
-        container.place(relx=0.5, rely=0.45, anchor="center")
+        container.pack(side="top", anchor="center")
 
         # --- Icône loupe 200x200 ---
         self._create_loupe_icon(container)
@@ -60,6 +64,10 @@ class HomeView(ctk.CTkFrame):
 
         # --- Bloc état de l'indexation ---
         self._create_indexing_block(container)
+
+        # Spacer bas pour équilibrer
+        self._spacer_bottom = ctk.CTkFrame(self, fg_color="transparent", height=0)
+        self._spacer_bottom.pack(side="top", fill="both", expand=True)
 
     # ------------------------------------------------------------------ Icône
     def _create_loupe_icon(self, parent):
