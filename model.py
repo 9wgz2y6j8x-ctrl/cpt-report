@@ -543,6 +543,13 @@ class AppModel:
                 ]
             },
             "toolbox2": {
+                "title": "Mesures manuelles",
+                "items": [
+                    {"title": "Nouveau fichier de mesures", "icon": "icons/file.png", "action": "new_measurements"},
+                    {"title": "Chercher fichiers Excel ou CSV", "icon": "icons/folder.png", "action": "find_measurements"}
+                ]
+            },
+            "toolbox3": {
                 "title": "Régler pour tous les sondages",
                 "items": [
                     
@@ -550,13 +557,6 @@ class AppModel:
                     {"title": "Date des essais", "icon": "icons/calendar.png", "action": "date_settings"},
                     {"title": "Décalage manomètres", "icon": "icons/settings.png", "action": "manometer_settings"},
                     {"title": "Capacité de l'appareil", "icon": "icons/capacity.png", "action": "capacity_settings"}
-                ]
-            },
-            "toolbox3": {
-                "title": "Mesures manuelles",
-                "items": [
-                    {"title": "Nouveau fichier de mesures", "icon": "icons/file.png", "action": "new_measurements"},
-                    {"title": "Chercher fichiers Excel ou CSV", "icon": "icons/folder.png", "action": "find_measurements"}
                 ]
             }
         }
