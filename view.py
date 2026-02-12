@@ -1812,6 +1812,7 @@ class RawDataWorkspaceView(ctk.CTkFrame):
         {"id": "essai",    "text": "N° Essai",     "key": "TestNumber", "weight": 1, "minwidth": 60},
         {"id": "date",     "text": "Date",          "key": "Date",       "weight": 1, "minwidth": 80},
         {"id": "lieu",     "text": "Lieu",           "key": "Location",   "weight": 2, "minwidth": 120},
+        {"id": "rue",      "text": "Rue",            "key": "Street",     "weight": 2, "minwidth": 120},
     ]
 
     def __init__(self, parent, model, presenter, *args, **kwargs):
@@ -1821,6 +1822,7 @@ class RawDataWorkspaceView(ctk.CTkFrame):
         self._edit_widget = None
         self._edit_item = None
         self._edit_field = None
+        self._edit_col = None  # Colonne treeview en cours d'édition (ex: "#2")
         self._sort_column = None
         self._sort_reverse = False
         self._sorted_files = []  # Cache triée des fichiers
@@ -1948,6 +1950,10 @@ class RawDataWorkspaceView(ctk.CTkFrame):
         self.tree.bind("<<TreeviewSelect>>", self._on_selection_changed)
         self.tree.bind("<Motion>", self._on_treeview_hover)
         self.tree.bind("<Leave>", self._on_treeview_leave)
+        self.tree.bind("<Up>", self._on_arrow_up)
+        self.tree.bind("<Down>", self._on_arrow_down)
+        self.tree.bind("<Left>", self._on_arrow_left)
+        self.tree.bind("<Right>", self._on_arrow_right)
 
         # ─── Panneau détail (overrides) ───
         self._detail_frame = ctk.CTkFrame(self, fg_color="#FAFAFA", corner_radius=8,
@@ -2373,10 +2379,15 @@ class RawDataWorkspaceView(ctk.CTkFrame):
         self._edit_widget = entry
         self._edit_item = item
         self._edit_field = field_key
+        self._edit_col = col
 
         entry.bind("<Return>", lambda e: self._confirm_edit())
         entry.bind("<Escape>", lambda e: self._cancel_edit())
-        entry.bind("<FocusOut>", lambda e: self._confirm_edit())
+        entry.bind("<FocusOut>", lambda e: self._on_edit_focus_out())
+        entry.bind("<Up>", lambda e: self._nav_edit_vertical(-1))
+        entry.bind("<Down>", lambda e: self._nav_edit_vertical(1))
+        entry.bind("<Left>", lambda e: self._nav_edit_horizontal(-1, e))
+        entry.bind("<Right>", lambda e: self._nav_edit_horizontal(1, e))
 
     def _confirm_edit(self):
         """Valide la correction inline."""
@@ -2403,6 +2414,150 @@ class RawDataWorkspaceView(ctk.CTkFrame):
             self._edit_widget = None
             self._edit_item = None
             self._edit_field = None
+            self._edit_col = None
+
+    # ──────────────────────── Navigation clavier ────────────────────────
+
+    def _get_editable_columns(self):
+        """Retourne la liste des indices de colonnes éditables (1-based, format treeview)."""
+        return [i + 1 for i, col in enumerate(self.COLUMNS_CONFIG) if col["key"] is not None]
+
+    def _on_edit_focus_out(self):
+        """Gère la perte de focus de l'éditeur inline (ignore si navigation en cours)."""
+        if getattr(self, "_navigating", False):
+            return
+        self._confirm_edit()
+
+    def _nav_edit_vertical(self, direction):
+        """Navigation verticale (haut/bas) pendant l'édition : confirme et ouvre l'éditeur sur la ligne adjacente."""
+        if not self._edit_widget:
+            return
+        current_item = self._edit_item
+        current_col = self._edit_col
+        current_field = self._edit_field
+
+        # Confirmer l'édition courante
+        self._navigating = True
+        self._confirm_edit()
+
+        # Trouver l'item adjacent
+        children = self.tree.get_children()
+        if not children:
+            self._navigating = False
+            return
+        try:
+            idx = list(children).index(current_item)
+        except ValueError:
+            self._navigating = False
+            return
+
+        new_idx = idx + direction
+        if new_idx < 0 or new_idx >= len(children):
+            self._navigating = False
+            return
+
+        new_item = children[new_idx]
+        self.tree.selection_set(new_item)
+        self.tree.see(new_item)
+        self.tree.focus(new_item)
+
+        # Ouvrir l'éditeur sur le même champ de la nouvelle ligne
+        self.after(10, lambda: self._deferred_open_edit(new_item, current_col, current_field))
+
+    def _nav_edit_horizontal(self, direction, event=None):
+        """Navigation horizontale (gauche/droite) pendant l'édition : passe au champ éditable adjacent."""
+        if not self._edit_widget:
+            return
+        # Si le curseur n'est pas en début/fin de texte, laisser le comportement par défaut
+        if event and self._edit_widget:
+            cursor_pos = self._edit_widget.index(tk.INSERT)
+            text_len = len(self._edit_widget.get())
+            if direction == -1 and cursor_pos > 0:
+                return  # Laisser le curseur se déplacer dans le texte
+            if direction == 1 and cursor_pos < text_len:
+                return  # Laisser le curseur se déplacer dans le texte
+
+        current_item = self._edit_item
+        current_col = self._edit_col
+
+        # Trouver la colonne courante et la suivante/précédente éditable
+        current_col_idx = int(current_col.replace("#", ""))
+        editable_cols = self._get_editable_columns()
+
+        try:
+            pos = editable_cols.index(current_col_idx)
+        except ValueError:
+            return
+        new_pos = pos + direction
+        if new_pos < 0 or new_pos >= len(editable_cols):
+            return
+
+        new_col_idx = editable_cols[new_pos]
+        new_col = f"#{new_col_idx}"
+        new_field = self.COLUMNS_CONFIG[new_col_idx - 1]["key"]
+
+        # Confirmer l'édition courante et ouvrir la nouvelle
+        self._navigating = True
+        self._confirm_edit()
+        self.after(10, lambda: self._deferred_open_edit(current_item, new_col, new_field))
+
+    def _deferred_open_edit(self, item, col, field_key):
+        """Ouvre l'éditeur inline après un court délai (pour laisser le rafraîchissement se faire)."""
+        self._navigating = False
+        if self.tree.exists(item):
+            self._start_inline_edit(item, col, field_key)
+
+    def _on_arrow_up(self, event):
+        """Flèche haut sans édition : déplace la sélection vers le haut."""
+        if self._edit_widget:
+            return  # Géré par les bindings de l'entry
+        children = self.tree.get_children()
+        if not children:
+            return
+        sel = self.tree.selection()
+        if sel:
+            try:
+                idx = list(children).index(sel[0])
+            except ValueError:
+                return
+            if idx > 0:
+                self.tree.selection_set(children[idx - 1])
+                self.tree.see(children[idx - 1])
+                self.tree.focus(children[idx - 1])
+        else:
+            self.tree.selection_set(children[-1])
+            self.tree.see(children[-1])
+            self.tree.focus(children[-1])
+
+    def _on_arrow_down(self, event):
+        """Flèche bas sans édition : déplace la sélection vers le bas."""
+        if self._edit_widget:
+            return
+        children = self.tree.get_children()
+        if not children:
+            return
+        sel = self.tree.selection()
+        if sel:
+            try:
+                idx = list(children).index(sel[0])
+            except ValueError:
+                return
+            if idx < len(children) - 1:
+                self.tree.selection_set(children[idx + 1])
+                self.tree.see(children[idx + 1])
+                self.tree.focus(children[idx + 1])
+        else:
+            self.tree.selection_set(children[0])
+            self.tree.see(children[0])
+            self.tree.focus(children[0])
+
+    def _on_arrow_left(self, event):
+        """Flèche gauche sans édition : ne fait rien (pas de déplacement horizontal hors édition)."""
+        pass
+
+    def _on_arrow_right(self, event):
+        """Flèche droite sans édition : ne fait rien (pas de déplacement horizontal hors édition)."""
+        pass
 
     # ──────────────────────── Actions utilisateur ────────────────────────
 
@@ -2420,10 +2575,127 @@ class RawDataWorkspaceView(ctk.CTkFrame):
     def _on_delete_key(self, event):
         self._on_remove_selection()
 
+    # ──────────────────────── Sélecteur de date (toolbox) ────────────────────────
+
+    def show_date_picker(self):
+        """Affiche un sélecteur de date et applique la date aux essais sélectionnés."""
+        from tkcalendar import Calendar
+        import datetime
+
+        rdm = self.model.raw_data_manager
+        if rdm.count == 0:
+            return
+
+        root = self.winfo_toplevel()
+        dialog = ctk.CTkToplevel(root)
+        dialog.title("Date des essais")
+        dialog.resizable(False, False)
+        dialog.grab_set()
+        dialog.transient(root)
+
+        # Dimensions et centrage
+        w, h = 380, 420
+        dialog.geometry(f"{w}x{h}")
+        dialog.update_idletasks()
+        x = root.winfo_x() + (root.winfo_width() - w) // 2
+        y = root.winfo_y() + (root.winfo_height() - h) // 2
+        dialog.geometry(f"+{x}+{y}")
+
+        frame = ctk.CTkFrame(dialog, fg_color="#FFFFFF", corner_radius=0)
+        frame.pack(fill="both", expand=True)
+
+        # En-tête
+        header = ctk.CTkFrame(frame, fg_color="#0115B8", corner_radius=0, height=44)
+        header.pack(fill="x")
+        header.pack_propagate(False)
+        ctk.CTkLabel(
+            header,
+            text="Choisir la date des essais",
+            font=("Verdana", 15, "bold"),
+            text_color="white",
+        ).pack(padx=15, pady=10)
+
+        # Indication
+        sel = self.tree.selection()
+        if sel:
+            info_text = f"Sera appliquée aux {len(sel)} essai(s) sélectionné(s)."
+        else:
+            info_text = f"Sera appliquée à tous les {rdm.count} essai(s)."
+
+        ctk.CTkLabel(
+            frame,
+            text=info_text,
+            font=("Verdana", 11, "italic"),
+            text_color="#757575",
+        ).pack(pady=(10, 5))
+
+        # Calendrier
+        cal = Calendar(
+            frame,
+            selectmode="day",
+            date_pattern="dd/mm/yyyy",
+            year=datetime.date.today().year,
+            month=datetime.date.today().month,
+            day=datetime.date.today().day,
+            font=("Verdana", 12),
+            background="#0115B8",
+            foreground="white",
+            selectbackground="#E65100",
+            selectforeground="white",
+            normalbackground="white",
+            normalforeground="#2E2E2E",
+            weekendbackground="#F5F5F5",
+            weekendforeground="#2E2E2E",
+            headersbackground="#0115B8",
+            headersforeground="white",
+            bordercolor="#D0D0D0",
+            othermonthforeground="#BDBDBD",
+            othermonthweforeground="#BDBDBD",
+        )
+        cal.pack(padx=20, pady=10, fill="both", expand=True)
+
+        # Boutons
+        btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_frame.pack(pady=(5, 15))
+
+        def do_apply():
+            selected_date = cal.get_date()
+            # Appliquer aux essais sélectionnés, ou à tous si rien n'est sélectionné
+            targets = list(sel) if sel else rdm.get_file_paths()
+            for fp in targets:
+                rdm.set_override(fp, "Date", selected_date)
+            dialog.destroy()
+
+        ctk.CTkButton(
+            btn_frame,
+            text="Appliquer",
+            font=("Verdana", 13, "bold"),
+            fg_color="#1565C0",
+            hover_color="#0D47A1",
+            text_color="white",
+            corner_radius=8,
+            width=140,
+            height=36,
+            command=do_apply,
+        ).pack(side="left", padx=10)
+
+        ctk.CTkButton(
+            btn_frame,
+            text="Annuler",
+            font=("Verdana", 13),
+            fg_color="#F5F5F5",
+            hover_color="#E0E0E0",
+            text_color="#616161",
+            corner_radius=8,
+            width=120,
+            height=36,
+            command=dialog.destroy,
+        ).pack(side="left", padx=10)
+
     # ──────────────────────── Menu contextuel ────────────────────────
 
     def _on_right_click(self, event):
-        """Menu contextuel enrichi : retirer fichier + rétablir données terrain."""
+        """Menu contextuel enrichi : retirer, rétablir, appliquer à tous."""
         item = self.tree.identify_row(event.y)
         if not item:
             return
@@ -2455,8 +2727,35 @@ class RawDataWorkspaceView(ctk.CTkFrame):
         )
         btn_reset.pack(fill="x", padx=6, pady=(6, 2))
 
-        sep = ctk.CTkFrame(menu, fg_color="#E0E0E0", height=1)
-        sep.pack(fill="x", padx=10, pady=2)
+        # ── Séparateur ──
+        sep1 = ctk.CTkFrame(menu, fg_color="#E0E0E0", height=1)
+        sep1.pack(fill="x", padx=10, pady=2)
+
+        # ── Appliquer à tous les essais ──
+        apply_items = [
+            ("  Appliquer ce n° dossier à tous les essais", "Job Number", "n° dossier"),
+            ("  Appliquer cette date à tous les essais", "Date", "date"),
+            ("  Appliquer ce lieu à tous les essais", "Location", "lieu"),
+            ("  Appliquer cette rue à tous les essais", "Street", "rue"),
+        ]
+
+        for label, field, field_label in apply_items:
+            value = rdm.get_effective_value(item, field)
+            has_value = bool(value and value.strip())
+            btn = ctk.CTkButton(
+                menu,
+                text=label,
+                text_color="#37474F" if has_value else "#BDBDBD",
+                hover_color="#E8F5E9" if has_value else "#FAFAFA",
+                state="normal" if has_value else "disabled",
+                command=lambda m=menu, f=field, v=value, fl=field_label: self._ctx_apply_to_all(m, f, v, fl),
+                **menu_btn_style,
+            )
+            btn.pack(fill="x", padx=6, pady=1)
+
+        # ── Séparateur ──
+        sep2 = ctk.CTkFrame(menu, fg_color="#E0E0E0", height=1)
+        sep2.pack(fill="x", padx=10, pady=2)
 
         btn_remove = ctk.CTkButton(
             menu,
@@ -2494,6 +2793,87 @@ class RawDataWorkspaceView(ctk.CTkFrame):
                 pass
 
         cid = root.bind("<Button-1>", _close, add="+")
+
+    def _ctx_apply_to_all(self, menu, field, value, field_label):
+        """Applique une valeur à tous les essais après confirmation."""
+        try:
+            if menu.winfo_exists():
+                menu.destroy()
+        except Exception:
+            pass
+
+        rdm = self.model.raw_data_manager
+        count = rdm.count
+        if count == 0:
+            return
+
+        # Fenêtre de confirmation
+        root = self.winfo_toplevel()
+        confirm = ctk.CTkToplevel(root)
+        confirm.title("Confirmation")
+        confirm.resizable(False, False)
+        confirm.grab_set()
+        confirm.transient(root)
+
+        # Centrage
+        w, h = 480, 200
+        confirm.geometry(f"{w}x{h}")
+        confirm.update_idletasks()
+        x = root.winfo_x() + (root.winfo_width() - w) // 2
+        y = root.winfo_y() + (root.winfo_height() - h) // 2
+        confirm.geometry(f"+{x}+{y}")
+
+        frame = ctk.CTkFrame(confirm, fg_color="#FFFFFF", corner_radius=0)
+        frame.pack(fill="both", expand=True)
+
+        ctk.CTkLabel(
+            frame,
+            text=f"Appliquer « {value} »\ncomme {field_label} à tous les {count} essai(s) ?",
+            font=("Verdana", 14),
+            text_color="#37474F",
+            justify="center",
+        ).pack(pady=(25, 5))
+
+        ctk.CTkLabel(
+            frame,
+            text="Cette action remplacera les valeurs existantes pour tous les essais.",
+            font=("Verdana", 11, "italic"),
+            text_color="#E65100",
+        ).pack(pady=(0, 20))
+
+        btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_frame.pack(pady=(0, 15))
+
+        def do_apply():
+            for fp in rdm.get_file_paths():
+                rdm.set_override(fp, field, value)
+            confirm.destroy()
+
+        ctk.CTkButton(
+            btn_frame,
+            text="Appliquer à tous",
+            font=("Verdana", 13, "bold"),
+            fg_color="#1565C0",
+            hover_color="#0D47A1",
+            text_color="white",
+            corner_radius=8,
+            width=160,
+            height=36,
+            command=do_apply,
+        ).pack(side="left", padx=10)
+
+        ctk.CTkButton(
+            btn_frame,
+            text="Annuler",
+            font=("Verdana", 13),
+            fg_color="#F5F5F5",
+            hover_color="#E0E0E0",
+            text_color="#616161",
+            corner_radius=8,
+            width=120,
+            height=36,
+            command=confirm.destroy,
+        ).pack(side="left", padx=10)
 
     def _ctx_reset_overrides(self, menu, item):
         try:
