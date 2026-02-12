@@ -2616,11 +2616,7 @@ class RawDataWorkspaceView(ctk.CTkFrame):
         ).pack(padx=15, pady=10)
 
         # Indication
-        sel = self.tree.selection()
-        if sel:
-            info_text = f"Sera appliquée aux {len(sel)} essai(s) sélectionné(s)."
-        else:
-            info_text = f"Sera appliquée à tous les {rdm.count} essai(s)."
+        info_text = f"Sera appliquée à tous les {rdm.count} essai(s)."
 
         ctk.CTkLabel(
             frame,
@@ -2660,9 +2656,8 @@ class RawDataWorkspaceView(ctk.CTkFrame):
 
         def do_apply():
             selected_date = cal.get_date()
-            # Appliquer aux essais sélectionnés, ou à tous si rien n'est sélectionné
-            targets = list(sel) if sel else rdm.get_file_paths()
-            for fp in targets:
+            # Appliquer à tous les essais
+            for fp in rdm.get_file_paths():
                 rdm.set_override(fp, "Date", selected_date)
             dialog.destroy()
 
