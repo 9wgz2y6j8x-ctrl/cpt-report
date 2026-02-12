@@ -27,8 +27,8 @@ class TopMenuView(ctk.CTkFrame):
 
         self.folder_button = ctk.CTkButton(
             self.button_frame,
-            text="Dossier 49.530",
-            font=("Verdana", 22, "bold", "italic"),
+            text="CPT Report",
+            font=("Verdana", 20, "bold", "italic"),
             fg_color="#0115B8",
             text_color="white",
             corner_radius=22,

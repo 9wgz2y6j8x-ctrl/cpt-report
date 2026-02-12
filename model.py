@@ -534,20 +534,21 @@ class AppModel:
         """Retourne les données des toolboxes pour le panneau latéral."""
         return {
             "toolbox1": {
-                "title": "Régler pour tous les sondages",
-                "items": [
-                    {"title": "Matériel utilisé", "icon": "icons/drill.png", "action": "material_settings"},
-                    {"title": "Date des essais", "icon": "icons/calendar.png", "action": "date_settings"},
-                    {"title": "Décalage manomètres", "icon": "icons/settings.png", "action": "manometer_settings"},
-                    {"title": "Capacité de l'appareil", "icon": "icons/capacity.png", "action": "capacity_settings"}
-                ]
-            },
-            "toolbox2": {
                 "title": "Mesures automatiques",
                 "items": [
                     {"title": "Recherche rapide", "icon": "icons/quick-search.png", "action": "quick_search"},
                     {"title": "Importer depuis une clé USB", "icon": "icons/usb.png", "action": "usb_import"},
                     {"title": "Chercher fichiers GEF", "icon": "icons/folder.png", "action": "find_GEF_file"}
+                ]
+            },
+            "toolbox2": {
+                "title": "Régler pour tous les sondages",
+                "items": [
+                    
+                    {"title": "Matériel utilisé", "icon": "icons/drill.png", "action": "material_settings"},
+                    {"title": "Date des essais", "icon": "icons/calendar.png", "action": "date_settings"},
+                    {"title": "Décalage manomètres", "icon": "icons/settings.png", "action": "manometer_settings"},
+                    {"title": "Capacité de l'appareil", "icon": "icons/capacity.png", "action": "capacity_settings"}
                 ]
             },
             "toolbox3": {
