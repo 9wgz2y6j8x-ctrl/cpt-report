@@ -103,7 +103,7 @@ class ImportAssistant(ctk.CTkToplevel):
 
         # Construire l'UI puis charger les données
         self._build_ui()
-        self._center_window(980, 760)
+        self._center_window(1280, 1024)
         self.after(100, self._load_file)
 
     # ------------------------------------------------------------------ UI
@@ -241,7 +241,8 @@ class ImportAssistant(ctk.CTkToplevel):
             tree_container,
             show="headings",
             style="Import.Treeview",
-            height=self.PREVIEW_ROWS,
+            #height=self.PREVIEW_ROWS,
+            height=11,
             xscrollcommand=self._tree_scroll_x.set,
             yscrollcommand=self._tree_scroll_y.set,
         )
