@@ -3250,7 +3250,8 @@ class AppView(ctk.CTk):
         self.settings_view = SettingsView(
             workspace5,
             settings_manager=self.model.settings_manager,
-            on_settings_changed=on_changed
+            on_settings_changed=on_changed,
+            model=self.model
         )
         self.settings_view.pack(fill="both", expand=True)
 

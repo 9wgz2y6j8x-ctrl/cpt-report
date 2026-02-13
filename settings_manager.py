@@ -43,6 +43,13 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "detection_preforages": True,
         "facteur_k_filtrage": 3,
     },
+    "parametres_calcul": {
+        "masse_volumique_sol_sec": 1800,
+        "masse_volumique_sol_sature": 2000,
+        "methode_calcul_portance": "De Beer (adapté)",
+        "largeur_semelle_fondation_1": 0.6,
+        "largeur_semelle_fondation_2": 1.5,
+    },
     "machines": [],
 }
 
