@@ -2,6 +2,7 @@ import customtkinter as ctk
 from tkinter import filedialog
 import tkinter as tk
 from typing import Callable, Optional, Dict, Any
+from datetime import datetime
 
 from settings_manager import SettingsManager
 
@@ -176,7 +177,8 @@ class _ComboSettingCard(_SettingCard):
     """Carte avec liste déroulante."""
 
     def __init__(self, parent, title: str, description: str,
-                 values: list, initial_value, on_change: Callable):
+                 values: list, initial_value, on_change: Callable,
+                 convert_int: bool = True):
         super().__init__(parent)
 
         text_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -195,6 +197,9 @@ class _ComboSettingCard(_SettingCard):
 
         str_values = [str(v) for v in values]
         self._var = ctk.StringVar(value=str(initial_value))
+
+        combo_width = max(100, max((len(s) for s in str_values), default=10) * 9 + 40)
+
         self._combo = ctk.CTkComboBox(
             self, values=str_values, variable=self._var,
             font=_FONTS["param_value"], dropdown_font=_FONTS["param_value"],
@@ -202,8 +207,8 @@ class _ComboSettingCard(_SettingCard):
             button_color=_COLORS["accent"],
             button_hover_color=_COLORS["accent_hover"],
             dropdown_fg_color=_COLORS["card"],
-            corner_radius=6, width=100, height=34, state="readonly",
-            command=lambda v: on_change(int(v))
+            corner_radius=6, width=combo_width, height=34, state="readonly",
+            command=lambda v: on_change(int(v) if convert_int else v)
         )
         self._combo.pack(side="right", padx=20)
 
@@ -441,10 +446,12 @@ class SettingsView(ctk.CTkFrame):
     """
 
     def __init__(self, parent, settings_manager: SettingsManager,
-                 on_settings_changed: Optional[Callable] = None, **kwargs):
+                 on_settings_changed: Optional[Callable] = None,
+                 model=None, **kwargs):
         super().__init__(parent, fg_color=_COLORS["bg"], corner_radius=0, **kwargs)
         self._sm = settings_manager
         self._on_settings_changed = on_settings_changed
+        self._model = model
 
         # Conteneur scrollable
         self._scroll = ctk.CTkScrollableFrame(
@@ -476,9 +483,14 @@ class SettingsView(ctk.CTkFrame):
 
         # Construction des sections
         self._build_section_dossiers()
+        self._build_section_indexation()
+        self._build_section_parametres_calcul()
         self._build_section_qualite()
         self._build_section_optimisation()
         self._build_section_machines()
+
+        # Démarrer le polling de l'indexation
+        self._poll_indexing_status()
 
     # ------------------------------------------------------------------
     # Callback wrapper
@@ -603,6 +615,317 @@ class SettingsView(ctk.CTkFrame):
             on_change=self._make_setter("optimisation_traitement",
                                         "facteur_k_filtrage")
         )
+
+    # ------------------------------------------------------------------
+    # Section : Indexation des fichiers d'essais
+    # ------------------------------------------------------------------
+    def _build_section_indexation(self):
+        _SectionHeader(self._inner, "Indexation des fichiers d'essais")
+
+        card = _SettingCard(self._inner)
+
+        text_frame = ctk.CTkFrame(card, fg_color="transparent")
+        text_frame.pack(fill="x", padx=16, pady=(10, 4))
+
+        ctk.CTkLabel(
+            text_frame, text="État de l'indexation", font=_FONTS["param_name"],
+            text_color=_COLORS["label_primary"], anchor="w"
+        ).pack(anchor="w")
+
+        ctk.CTkLabel(
+            text_frame,
+            text="L'indexation parcourt les dossiers configurés pour référencer les fichiers d'essais disponibles.",
+            font=_FONTS["param_desc"],
+            text_color=_COLORS["label_secondary"], anchor="w",
+            justify="left", wraplength=600
+        ).pack(anchor="w", pady=(2, 0))
+
+        # Bloc d'informations d'indexation
+        info_frame = ctk.CTkFrame(card, fg_color=_COLORS["path_bg"],
+                                  corner_radius=6, border_width=1,
+                                  border_color=_COLORS["input_border"])
+        info_frame.pack(fill="x", padx=16, pady=(8, 4))
+
+        info_inner = ctk.CTkFrame(info_frame, fg_color="transparent")
+        info_inner.pack(fill="x", padx=12, pady=10)
+
+        mono = ("Consolas", 12)
+        color = _COLORS["label_secondary"]
+
+        self._lbl_status = ctk.CTkLabel(info_inner, text="Statut : —",
+                                        font=mono, text_color=color, anchor="w")
+        self._lbl_status.pack(anchor="w", pady=1)
+
+        self._lbl_progress = ctk.CTkLabel(info_inner, text="Progression : —",
+                                          font=mono, text_color=color, anchor="w")
+        self._lbl_progress.pack(anchor="w", pady=1)
+
+        self._lbl_files = ctk.CTkLabel(info_inner, text="Fichiers indexés : —",
+                                       font=mono, text_color=color, anchor="w")
+        self._lbl_files.pack(anchor="w", pady=1)
+
+        self._lbl_last = ctk.CTkLabel(info_inner, text="Dernière indexation : —",
+                                      font=mono, text_color=color, anchor="w")
+        self._lbl_last.pack(anchor="w", pady=1)
+
+        # Bouton + message d'avertissement
+        btn_frame = ctk.CTkFrame(card, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=16, pady=(4, 10))
+
+        self._btn_index = ctk.CTkButton(
+            btn_frame,
+            text="Relancer l'indexation",
+            font=_FONTS["button_sm"],
+            fg_color=_COLORS["accent"],
+            hover_color=_COLORS["accent_hover"],
+            text_color="white",
+            corner_radius=6,
+            width=180, height=34,
+            command=self._on_start_indexing,
+        )
+        self._btn_index.pack(side="left")
+
+        self._lbl_no_config = ctk.CTkLabel(
+            btn_frame, text="",
+            font=_FONTS["param_desc"],
+            text_color="#CC6600",
+        )
+        self._lbl_no_config.pack(side="left", padx=(12, 0))
+
+    def _on_start_indexing(self):
+        if self._model:
+            self._model.start_background_indexing()
+
+    # ------------------------------------------------------------------ Polling
+    def _poll_indexing_status(self):
+        """Met à jour l'affichage de l'état d'indexation toutes les 400ms."""
+        if self._model:
+            try:
+                self._refresh_indexing_display()
+            except Exception as e:
+                print(f"Erreur polling réglages : {e}")
+        self.after(400, self._poll_indexing_status)
+
+    def _refresh_indexing_display(self):
+        status_info = self._model.get_indexing_status()
+        status_code = status_info.get("status", "not_started")
+
+        has_dirs = bool(self._model.cpt_root_directories)
+
+        if not has_dirs:
+            self._lbl_no_config.configure(
+                text="Aucun emplacement configuré dans les dossiers de travail."
+            )
+            self._btn_index.configure(state="disabled")
+        else:
+            self._lbl_no_config.configure(text="")
+            is_indexing = status_info.get("is_indexing", False)
+            self._btn_index.configure(state="disabled" if is_indexing else "normal")
+
+        status_map = {
+            "not_started": "Non démarrée",
+            "indexing": "En cours…",
+            "completed": "Terminée",
+            "error": "Erreur",
+        }
+        status_label = status_map.get(status_code, status_code)
+        color_map = {
+            "not_started": "#888888",
+            "indexing": "#1565C0",
+            "completed": "#2E7D32",
+            "error": "#C62828",
+        }
+        self._lbl_status.configure(
+            text=f"Statut : {status_label}",
+            text_color=color_map.get(status_code, _COLORS["label_secondary"]),
+        )
+
+        progress = status_info.get("progress", 0)
+        if status_code == "indexing":
+            self._lbl_progress.configure(text=f"Progression : {progress:.0f} %")
+        elif status_code == "completed":
+            self._lbl_progress.configure(text="Progression : 100 %")
+        else:
+            self._lbl_progress.configure(text="Progression : —")
+
+        files_count = "—"
+        if self._model.cpt_indexer and hasattr(self._model.cpt_indexer, "indexed_data"):
+            count = len(self._model.cpt_indexer.indexed_data)
+            if count > 0:
+                files_count = str(count)
+        self._lbl_files.configure(text=f"Fichiers indexés : {files_count}")
+
+        last_dt = getattr(self._model, "last_indexing_completed", None)
+        if last_dt:
+            formatted = last_dt.strftime("%d/%m/%Y %H:%M")
+            self._lbl_last.configure(text=f"Dernière indexation : {formatted}")
+        else:
+            self._lbl_last.configure(text="Dernière indexation : —")
+
+    # ------------------------------------------------------------------
+    # Section : Paramètres de calcul
+    # ------------------------------------------------------------------
+    def _build_section_parametres_calcul(self):
+        _SectionHeader(self._inner, "Paramètres de calcul")
+
+        data = self._sm.get_section("parametres_calcul")
+
+        # --- Masse volumique du sol sec ---
+        self._build_numeric_param_card(
+            title="Masse volumique du sol sec",
+            description="Valeur utilisée pour les calculs géotechniques.",
+            unit="kg/m³",
+            default_value=1800,
+            current_value=data.get("masse_volumique_sol_sec", 1800),
+            setting_key="masse_volumique_sol_sec",
+            warning_text="Attention : la modification de ce paramètre affecte tous les calculs de portance.",
+        )
+
+        # --- Masse volumique du sol saturé ---
+        self._build_numeric_param_card(
+            title="Masse volumique du sol saturé",
+            description="Valeur utilisée pour les calculs en conditions saturées.",
+            unit="kg/m³",
+            default_value=2000,
+            current_value=data.get("masse_volumique_sol_sature", 2000),
+            setting_key="masse_volumique_sol_sature",
+            warning_text="Attention : la modification de ce paramètre affecte tous les calculs de portance.",
+        )
+
+        # --- Méthode de calcul de la portance ---
+        _ComboSettingCard(
+            self._inner,
+            title="Méthode de calcul de la portance",
+            description=(
+                "Méthode utilisée pour le calcul de la capacité portante "
+                "à partir des résultats d'essais CPT."
+            ),
+            values=["De Beer (adapté)", "Brinch Hansen", "Caquot Kérisel", "Meyerhof"],
+            initial_value=data.get("methode_calcul_portance", "De Beer (adapté)"),
+            on_change=self._make_setter_str("parametres_calcul",
+                                            "methode_calcul_portance"),
+            convert_int=False
+        )
+
+        # --- Largeur de semelle de fondation 1 ---
+        self._build_numeric_param_card(
+            title="Largeur de semelle de fondation 1",
+            description="Largeur de la première semelle de fondation utilisée dans les calculs.",
+            unit="m",
+            default_value=0.6,
+            current_value=data.get("largeur_semelle_fondation_1", 0.6),
+            setting_key="largeur_semelle_fondation_1",
+        )
+
+        # --- Largeur de semelle de fondation 2 ---
+        self._build_numeric_param_card(
+            title="Largeur de semelle de fondation 2",
+            description="Largeur de la deuxième semelle de fondation utilisée dans les calculs.",
+            unit="m",
+            default_value=1.5,
+            current_value=data.get("largeur_semelle_fondation_2", 1.5),
+            setting_key="largeur_semelle_fondation_2",
+        )
+
+    def _make_setter_str(self, section: str, key: str):
+        """Setter qui ne convertit pas en int (pour les ComboBox texte)."""
+        def _set(value):
+            self._sm.set(section, key, value)
+            self._notify_change()
+        return _set
+
+    def _build_numeric_param_card(self, title: str, description: str,
+                                   unit: str, default_value, current_value,
+                                   setting_key: str, warning_text: str = ""):
+        """Construit une carte de paramètre numérique avec bouton de réinitialisation."""
+        card = _SettingCard(self._inner)
+
+        text_frame = ctk.CTkFrame(card, fg_color="transparent")
+        text_frame.pack(side="left", fill="both", expand=True, padx=16, pady=10)
+
+        ctk.CTkLabel(
+            text_frame, text=title, font=_FONTS["param_name"],
+            text_color=_COLORS["label_primary"], anchor="w"
+        ).pack(anchor="w")
+
+        ctk.CTkLabel(
+            text_frame, text=description, font=_FONTS["param_desc"],
+            text_color=_COLORS["label_secondary"], anchor="w",
+            justify="left", wraplength=520
+        ).pack(anchor="w", pady=(2, 0))
+
+        # Label d'avertissement (masqué par défaut)
+        warning_lbl = ctk.CTkLabel(
+            text_frame, text="",
+            font=("Verdana", 11),
+            text_color="#CC6600", anchor="w",
+            justify="left", wraplength=520
+        )
+        warning_lbl.pack(anchor="w", pady=(2, 0))
+
+        # Zone droite : champ + unité + bouton reset
+        right_frame = ctk.CTkFrame(card, fg_color="transparent")
+        right_frame.pack(side="right", padx=(0, 16), pady=10)
+
+        input_row = ctk.CTkFrame(right_frame, fg_color="transparent")
+        input_row.pack()
+
+        var = ctk.StringVar(value=str(current_value))
+        entry = ctk.CTkEntry(
+            input_row, textvariable=var,
+            font=_FONTS["param_value"],
+            fg_color=_COLORS["input_bg"],
+            border_color=_COLORS["input_border"],
+            border_width=1, corner_radius=6, height=34, width=90,
+            justify="center"
+        )
+        entry.pack(side="left")
+
+        ctk.CTkLabel(
+            input_row, text=unit, font=_FONTS["param_desc"],
+            text_color=_COLORS["label_secondary"]
+        ).pack(side="left", padx=(4, 0))
+
+        # Bouton retour à la valeur par défaut
+        reset_btn = ctk.CTkButton(
+            right_frame, text="Par défaut",
+            font=("Verdana", 11),
+            fg_color="transparent",
+            hover_color="#E0E4F0",
+            text_color=_COLORS["accent"],
+            border_width=1, border_color=_COLORS["input_border"],
+            corner_radius=6, width=90, height=28,
+            command=lambda: self._reset_numeric_param(
+                var, default_value, setting_key, warning_lbl
+            )
+        )
+        reset_btn.pack(pady=(6, 0))
+
+        # Callback sur modification
+        def on_value_changed(*_args):
+            raw = var.get().strip()
+            try:
+                val = float(raw)
+            except ValueError:
+                return
+            self._sm.set("parametres_calcul", setting_key, val)
+            self._notify_change()
+            if warning_text and val != default_value:
+                warning_lbl.configure(text=warning_text)
+            else:
+                warning_lbl.configure(text="")
+
+        var.trace_add("write", on_value_changed)
+
+        # Afficher l'avertissement si la valeur initiale diffère du défaut
+        if warning_text and current_value != default_value:
+            warning_lbl.configure(text=warning_text)
+
+    def _reset_numeric_param(self, var, default_value, setting_key, warning_lbl):
+        var.set(str(default_value))
+        self._sm.set("parametres_calcul", setting_key, default_value)
+        self._notify_change()
+        warning_lbl.configure(text="")
 
     # ------------------------------------------------------------------
     # Section : Configuration des machines
