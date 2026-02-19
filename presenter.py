@@ -45,6 +45,10 @@ class AppPresenter:
             if self.model.cpt_indexer:
                 self.model.start_background_indexing()
 
+        # Propager le changement de reglages a la vue FILTRER
+        if hasattr(self.view, 'cleaning_view'):
+            self.view.cleaning_view.on_settings_changed()
+
     def on_search_text_changed(self, search_text):
         """Gère le changement du texte de recherche avec recherche CPT."""
         print(f"DEBUG PRESENTER: Recherche pour '{search_text}'")
