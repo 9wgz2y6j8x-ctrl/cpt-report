@@ -248,9 +248,7 @@ class CPTCleaningView(ctk.CTkFrame):
 
         self.model = model
         self.presenter = presenter
-        self.cfg = CPTPlotConfig(
-            show_titles=False,       # Titre redondant avec la toolbar
-        )
+        self._rebuild_plot_config()
         self.cpt_entries: list[CPTFileEntry] = []
         self.current_index = -1
         self.list_items: list[FileListItem] = []
@@ -265,6 +263,22 @@ class CPTCleaningView(ctk.CTkFrame):
 
         self._create_sidebar()
         self._create_chart_area()
+
+    # ------------------------------------------------------------------ config
+
+    def _rebuild_plot_config(self):
+        """Reconstruit CPTPlotConfig en lisant la paire graphique depuis les reglages."""
+        pair = self.model.settings_manager.get("unites", "paire_graphique") or "MPa_kN"
+        self.cfg = CPTPlotConfig(
+            show_titles=False,
+            plot_pair=pair,
+        )
+
+    def on_settings_changed(self):
+        """Appelee quand les reglages changent : reconstruit la config et redessine."""
+        self._rebuild_plot_config()
+        if self.current_index >= 0:
+            self._update_chart()
 
     # ------------------------------------------------------------------ init
 
@@ -625,6 +639,7 @@ class CPTCleaningView(ctk.CTkFrame):
     def _configure_axes(self, entry: CPTFileEntry):
         """Configure les axes en reproduisant fidelement plot_cpt() via CPTPlotConfig."""
         cfg = self.cfg
+        axis_cfg = cfg._axis_cfg
 
         # -- ax_qc = axe secondaire (haut, twiny) -- identique a ax2 de plot_cpt()
         self.ax_qc.spines['top'].set_position(('outward', 0))
@@ -632,11 +647,12 @@ class CPTCleaningView(ctk.CTkFrame):
         self.ax_qc.xaxis.set_label_position('top')
 
         self.ax_qc.set_xlim(0, cfg.qc_max)
-        self.ax_qc.xaxis.set_major_locator(MultipleLocator(5))
-        self.ax_qc.xaxis.set_minor_locator(MultipleLocator(1))
+        self.ax_qc.xaxis.set_major_locator(MultipleLocator(axis_cfg["qc_major"]))
+        self.ax_qc.xaxis.set_minor_locator(MultipleLocator(axis_cfg["qc_minor"]))
 
-        # Ticks qc formates en entiers gras (lignes 373-380 de cpt_plot)
-        qc_ticks = list(range(0, int(cfg.qc_max) + 1, 5))
+        # Ticks qc formates en entiers gras
+        qc_major = axis_cfg["qc_major"]
+        qc_ticks = list(np.arange(0, cfg.qc_max + qc_major * 0.5, qc_major))
         if cfg.qc_max not in qc_ticks:
             qc_ticks.append(cfg.qc_max)
         self.ax_qc.set_xticks(qc_ticks)
@@ -660,8 +676,8 @@ class CPTCleaningView(ctk.CTkFrame):
                                 color='lightgray', dashes=(4, 7))
 
         self.ax_qst.set_xlim(0, cfg.qst_max)
-        self.ax_qst.xaxis.set_major_locator(MultipleLocator(25))
-        self.ax_qst.xaxis.set_minor_locator(MultipleLocator(5))
+        self.ax_qst.xaxis.set_major_locator(MultipleLocator(axis_cfg["qst_major"]))
+        self.ax_qst.xaxis.set_minor_locator(MultipleLocator(axis_cfg["qst_minor"]))
         self.ax_qst.xaxis.set_tick_params(which='minor', labelbottom=False)
 
         self.ax_qst.set_xlabel(cfg.xlabel_qst, fontweight='light',
