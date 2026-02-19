@@ -16,13 +16,14 @@ from matplotlib.figure import Figure
 from matplotlib.ticker import MultipleLocator
 import pandas as pd
 import numpy as np
+import re
 import threading
 from pathlib import Path
 from typing import Optional
 
 from gef_reader import read_gef_to_dataframe, GefFileError
 from despike_cleaning import hampel_peak_filter_aggressive
-from cpt_plot import CPTPlotConfig, _resolve_column_name
+from cpt_plot import CPTPlotConfig, _resolve_column_name, _detect_sampling_interval
 from tabular_reader import load_cpt_dataframe
 
 # ---------------------------------------------------------------------------
@@ -254,6 +255,8 @@ class CPTCleaningView(ctk.CTkFrame):
         self.current_index = -1
         self.list_items: list[FileListItem] = []
         self._bindings_installed = False
+        self._is_visible = False
+        self._rdm_callback = lambda: self._on_raw_data_changed()
 
         # Layout 2 colonnes
         self.grid_columnconfigure(0, weight=0, minsize=380)
@@ -264,6 +267,19 @@ class CPTCleaningView(ctk.CTkFrame):
         self._create_chart_area()
 
     # ------------------------------------------------------------------ init
+
+    @staticmethod
+    def _sort_key(entry: CPTFileEntry):
+        """Cle de tri : numero de dossier croissant, puis numero d'essai croissant."""
+        job = entry.job_number or ""
+        test = entry.test_number or ""
+        # Extraire la partie numerique pour un tri naturel
+        def _num(s):
+            try:
+                return (0, int(re.sub(r'[^\d]', '', s) or '0'))
+            except ValueError:
+                return (1, 0)
+        return (job.lower(), _num(test), test.lower())
 
     def refresh_data(self):
         """Recharge la liste depuis RawDataManager et reconstruit la sidebar."""
@@ -279,6 +295,9 @@ class CPTCleaningView(ctk.CTkFrame):
             entry.is_filtered = old_state.get(entry.file_path, False)
             self.cpt_entries.append(entry)
 
+        # Tri par defaut : numero de dossier croissant, puis numero d'essai croissant
+        self.cpt_entries.sort(key=self._sort_key)
+
         self._rebuild_list()
 
         if self.cpt_entries:
@@ -290,12 +309,21 @@ class CPTCleaningView(ctk.CTkFrame):
 
     def on_workspace_shown(self):
         """Appelee quand on bascule sur ce workspace."""
+        self._is_visible = True
+        self.model.raw_data_manager.subscribe(self._rdm_callback)
         self.refresh_data()
         self.after(200, self._setup_bindings)
 
     def on_workspace_hidden(self):
         """Appelee quand on quitte ce workspace."""
+        self._is_visible = False
+        self.model.raw_data_manager.unsubscribe(self._rdm_callback)
         self._remove_bindings()
+
+    def _on_raw_data_changed(self):
+        """Appelee quand RawDataManager est modifie (ajout/suppression de fichiers)."""
+        if self._is_visible:
+            self.after(100, self.refresh_data)
 
     # ------------------------------------------------------------ sidebar
 
@@ -358,6 +386,7 @@ class CPTCleaningView(ctk.CTkFrame):
         for idx, entry in enumerate(self.cpt_entries):
             item = FileListItem(self.list_frame, entry, idx, self._on_item_clicked)
             item.pack(fill="x", pady=3)
+            item.update_status()
             self.list_items.append(item)
 
     # ---------------------------------------------------------- chart area
@@ -545,10 +574,41 @@ class CPTCleaningView(ctk.CTkFrame):
         if self.current_index < 0:
             return
         entry = self.cpt_entries[self.current_index]
+
+        # Interdire le filtrage si l'intervalle de profondeur est > 0.05 m
+        if self.filter_var.get() and not entry.is_filtered:
+            if entry.ensure_loaded() and entry.df_raw is not None:
+                interval = _detect_sampling_interval(
+                    entry.df_raw[entry.col_depth].sort_values()
+                )
+                if interval > 0.05:
+                    # Annuler le switch
+                    self.filter_var.set(False)
+                    self._show_interval_warning(interval)
+                    return
+
         entry.is_filtered = self.filter_var.get()
         self.list_items[self.current_index].update_status()
         self._update_progress()
         self._update_chart()
+
+    def _show_interval_warning(self, interval: float):
+        """Affiche un avertissement temporaire sur le graphique quand le filtrage est interdit."""
+        self.ax_qst.text(
+            0.5, 0.5,
+            f"Filtrage impossible :\n"
+            f"l'intervalle de profondeur detecte ({interval:.3f} m)\n"
+            f"est superieur a 0.05 m.",
+            transform=self.ax_qst.transAxes,
+            ha='center', va='center', fontsize=12,
+            color='#DC2626', fontweight='bold',
+            bbox=dict(boxstyle='round,pad=0.8', facecolor='#FEF2F2',
+                      edgecolor='#DC2626', alpha=0.95),
+            zorder=10
+        )
+        self.canvas.draw_idle()
+        # Redessiner le graphique normal après 3 secondes
+        self.after(3000, self._update_chart)
 
     def _update_progress(self):
         filtered_count = sum(1 for e in self.cpt_entries if e.is_filtered)

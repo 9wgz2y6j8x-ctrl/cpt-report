@@ -193,6 +193,8 @@ class ObservationsView(ctk.CTkFrame):
         self.current_index = -1
         self.list_items: list[ObsFileListItem] = []
         self._bindings_installed = False
+        self._is_visible = False
+        self._rdm_callback = lambda: self._on_raw_data_changed()
 
         # Stockage des données par essai (clé = file_path)
         # {file_path: {"hole_obs": {row_key: {"fin_essai": str, "fin_chantier": str}},
@@ -261,13 +263,22 @@ class ObservationsView(ctk.CTkFrame):
 
     def on_workspace_shown(self):
         """Appelée quand on bascule sur ce workspace."""
+        self._is_visible = True
+        self.model.raw_data_manager.subscribe(self._rdm_callback)
         self.refresh_data()
         self.after(200, self._setup_bindings)
 
     def on_workspace_hidden(self):
         """Appelée quand on quitte ce workspace."""
+        self._is_visible = False
+        self.model.raw_data_manager.unsubscribe(self._rdm_callback)
         self._cancel_edit()
         self._remove_bindings()
+
+    def _on_raw_data_changed(self):
+        """Appelée quand RawDataManager est modifié (ajout/suppression de fichiers)."""
+        if self._is_visible:
+            self.after(100, self.refresh_data)
 
     # ------------------------------------------------------------ sidebar
 
@@ -332,6 +343,7 @@ class ObservationsView(ctk.CTkFrame):
                 has_data_fn=self._has_any_data
             )
             item.pack(fill="x", pady=3)
+            item.update_status()
             self.list_items.append(item)
 
     # ---------------------------------------------------------- content area
