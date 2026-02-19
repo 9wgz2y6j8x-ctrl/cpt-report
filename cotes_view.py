@@ -11,10 +11,11 @@ Affiche un Treeview global (1 ligne = 1 essai) avec :
 Import depuis CSV/Excel ou GeoPackage via cotes_import.
 """
 
+import re
 import customtkinter as ctk
 from tkinter import ttk
 import tkinter as tk
-from typing import Optional, Dict
+from typing import Optional, Dict, List, Tuple
 
 from cotes_import import (
     import_cotes_from_tabular,
@@ -137,12 +138,6 @@ class CotesView(ctk.CTkFrame):
         inner = ctk.CTkFrame(content, fg_color="transparent")
         inner.pack(fill="both", expand=True, padx=16, pady=12)
 
-        # Label de feedback (masqué par défaut)
-        self._feedback_label = ctk.CTkLabel(
-            inner, text="", font=FONTS["small"],
-            text_color=COLORS["text_secondary"], wraplength=800,
-        )
-
         self._create_tree(inner)
 
     def _create_tree(self, parent):
@@ -236,8 +231,14 @@ class CotesView(ctk.CTkFrame):
 
     # ------------------------------------------------------------------ data
 
+    @staticmethod
+    def _natural_sort_key(text: str) -> List:
+        """Clé de tri naturel : sépare texte et nombres pour trier 'P2' < 'P10'."""
+        parts = re.split(r'(\d+)', str(text) if text else "")
+        return [int(p) if p.isdigit() else p.lower() for p in parts]
+
     def refresh_data(self):
-        """Reconstruit le Treeview depuis RawDataManager."""
+        """Reconstruit le Treeview depuis RawDataManager, trié naturellement."""
         self._cancel_edit()
 
         rdm = self.model.raw_data_manager
@@ -246,22 +247,30 @@ class CotesView(ctk.CTkFrame):
         # Lazy-import ObsFileEntry to get max_depth
         from observations_view3 import ObsFileEntry
 
+        # Construire les données pour chaque essai
+        rows: List[Tuple] = []
+        for file_data in files:
+            fp = file_data.get("file_path", "")
+            entry = ObsFileEntry(file_data, rdm)
+            entry.ensure_loaded()
+
+            job = rdm.get_effective_value(fp, "Job Number") or ""
+            test = rdm.get_effective_value(fp, "TestNumber") or ""
+            depth_str = f"{entry.max_depth:.2f}" if entry.max_depth is not None else "-"
+            cote_val = self._cotes.get(fp)
+            cote_str = f"{cote_val:.2f}" if cote_val is not None else ""
+
+            rows.append((fp, job, test, depth_str, cote_str))
+
+        # Tri naturel sur N° dossier puis N° essai
+        rows.sort(key=lambda r: (self._natural_sort_key(r[1]), self._natural_sort_key(r[2])))
+
         # Supprimer les anciennes lignes
         for iid in self._tree.get_children():
             self._tree.delete(iid)
         self._iid_to_filepath.clear()
 
-        for i, file_data in enumerate(files):
-            fp = file_data.get("file_path", "")
-            entry = ObsFileEntry(file_data, rdm)
-            entry.ensure_loaded()
-
-            job = rdm.get_effective_value(fp, "Job Number")
-            test = rdm.get_effective_value(fp, "TestNumber")
-            depth_str = f"{entry.max_depth:.2f}" if entry.max_depth is not None else "-"
-            cote_val = self._cotes.get(fp)
-            cote_str = f"{cote_val:.2f}" if cote_val is not None else ""
-
+        for i, (fp, job, test, depth_str, cote_str) in enumerate(rows):
             tag = "evenrow" if i % 2 == 0 else "oddrow"
             iid = self._tree.insert(
                 "", "end",
@@ -271,9 +280,9 @@ class CotesView(ctk.CTkFrame):
             self._iid_to_filepath[iid] = fp
 
         total = len(files)
-        filled = sum(1 for v in self._cotes.values() if v is not None)
+        filled = sum(1 for fp in self._iid_to_filepath.values()
+                     if self._cotes.get(fp) is not None)
         self._count_label.configure(text=f"{filled}/{total} cotes renseignées")
-        self._hide_feedback()
 
     def get_cote(self, file_path: str) -> Optional[float]:
         return self._cotes.get(file_path)
@@ -463,8 +472,10 @@ class CotesView(ctk.CTkFrame):
         result: Optional[ImportResult] = import_cotes_from_tabular(
             self.winfo_toplevel(), essai_names
         )
-        if result:
-            self._apply_import_result(result)
+        if result and result.matched:
+            self._confirm_overwrite_then_apply(result)
+        elif result:
+            self._show_import_feedback(result)
 
     def _on_import_gpkg(self):
         """Import cotes depuis GeoPackage."""
@@ -485,24 +496,105 @@ class CotesView(ctk.CTkFrame):
         result: Optional[ImportResult] = show_gpkg_import_dialog(
             self.winfo_toplevel(), essai_names, settings_mgr
         )
-        if result:
-            self._apply_import_result(result)
+        if result and result.matched:
+            self._confirm_overwrite_then_apply(result)
+        elif result:
+            self._show_import_feedback(result)
 
-    def _apply_import_result(self, result: ImportResult):
-        """Applique le résultat d'un import au store et rafraîchit."""
+    def _has_existing_cotes(self) -> int:
+        """Retourne le nombre d'essais ayant déjà une cote renseignée."""
+        return sum(1 for v in self._cotes.values() if v is not None)
+
+    def _confirm_overwrite_then_apply(self, result: ImportResult):
+        """Si des cotes existent déjà, demander confirmation avant écrasement."""
+        # Compter les cotes qui seraient écrasées
+        n_overwrite = sum(1 for fp in result.matched if self._cotes.get(fp) is not None)
+
+        if n_overwrite == 0:
+            self._do_apply_import(result)
+            return
+
+        root = self.winfo_toplevel()
+        confirm = ctk.CTkToplevel(root)
+        confirm.title("Confirmation")
+        confirm.resizable(False, False)
+        confirm.grab_set()
+        confirm.transient(root)
+
+        w, h = 480, 200
+        confirm.geometry(f"{w}x{h}")
+        confirm.update_idletasks()
+        x = root.winfo_x() + (root.winfo_width() - w) // 2
+        y = root.winfo_y() + (root.winfo_height() - h) // 2
+        confirm.geometry(f"+{x}+{y}")
+
+        frame = ctk.CTkFrame(confirm, fg_color="#FFFFFF", corner_radius=0)
+        frame.pack(fill="both", expand=True)
+
+        ctk.CTkLabel(
+            frame,
+            text=f"Importer {len(result.matched)} cote(s) ?\n"
+                 f"{n_overwrite} cote(s) existante(s) seront écrasée(s).",
+            font=("Verdana", 14),
+            text_color="#37474F",
+            justify="center",
+        ).pack(pady=(25, 5))
+
+        ctk.CTkLabel(
+            frame,
+            text="Cette action remplacera les valeurs existantes.",
+            font=("Verdana", 11, "italic"),
+            text_color="#E65100",
+        ).pack(pady=(0, 20))
+
+        btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_frame.pack(pady=(0, 15))
+
+        def do_apply():
+            confirm.destroy()
+            self._do_apply_import(result)
+
+        ctk.CTkButton(
+            btn_frame,
+            text="Appliquer",
+            font=("Verdana", 13, "bold"),
+            fg_color="#1565C0",
+            hover_color="#0D47A1",
+            text_color="white",
+            corner_radius=8,
+            width=160,
+            height=36,
+            command=do_apply,
+        ).pack(side="left", padx=10)
+
+        ctk.CTkButton(
+            btn_frame,
+            text="Annuler",
+            font=("Verdana", 13),
+            fg_color="#F5F5F5",
+            hover_color="#E0E0E0",
+            text_color="#616161",
+            corner_radius=8,
+            width=120,
+            height=36,
+            command=confirm.destroy,
+        ).pack(side="left", padx=10)
+
+    def _do_apply_import(self, result: ImportResult):
+        """Applique le résultat d'un import au store et affiche le bilan."""
         for fp, cote_val in result.matched.items():
             self._cotes[fp] = cote_val
 
         self.refresh_data()
-        self._show_feedback(result)
+        self._show_import_feedback(result)
 
-    def _show_feedback(self, result: ImportResult):
-        """Affiche un message de feedback après import."""
-        parts = []
+    def _show_import_feedback(self, result: ImportResult):
+        """Affiche un dialogue modal de bilan d'import (style données brutes)."""
         n_match = len(result.matched)
         n_unmatch = len(result.unmatched)
         n_err = len(result.errors)
 
+        parts = []
         if n_match:
             parts.append(f"{n_match} cote(s) importée(s)")
         if n_unmatch:
@@ -510,15 +602,57 @@ class CotesView(ctk.CTkFrame):
         if n_err:
             parts.append(f"{n_err} erreur(s) de parsing")
 
-        msg = " — ".join(parts) if parts else "Aucune donnée importée."
-        color = COLORS["success"] if n_match and not n_err else (
-            COLORS["warning"] if n_match else COLORS["text_secondary"]
-        )
-        self._feedback_label.configure(text=msg, text_color=color)
-        self._feedback_label.pack(anchor="w", pady=(0, 6))
+        summary = "\n".join(parts) if parts else "Aucune donnée importée."
 
-        # Masquer après 8 secondes
-        self.after(8000, self._hide_feedback)
+        root = self.winfo_toplevel()
+        dlg = ctk.CTkToplevel(root)
+        dlg.title("Résultat de l'import")
+        dlg.resizable(False, False)
+        dlg.grab_set()
+        dlg.transient(root)
 
-    def _hide_feedback(self):
-        self._feedback_label.pack_forget()
+        w, h = 480, 180
+        dlg.geometry(f"{w}x{h}")
+        dlg.update_idletasks()
+        x = root.winfo_x() + (root.winfo_width() - w) // 2
+        y = root.winfo_y() + (root.winfo_height() - h) // 2
+        dlg.geometry(f"+{x}+{y}")
+
+        frame = ctk.CTkFrame(dlg, fg_color="#FFFFFF", corner_radius=0)
+        frame.pack(fill="both", expand=True)
+
+        if n_match and not n_err:
+            icon_color = "#16A34A"
+            title = "Import réussi"
+        elif n_match:
+            icon_color = "#D97706"
+            title = "Import partiel"
+        else:
+            icon_color = "#6B7280"
+            title = "Aucun résultat"
+
+        ctk.CTkLabel(
+            frame, text=title,
+            font=("Verdana", 15, "bold"),
+            text_color=icon_color,
+        ).pack(pady=(20, 8))
+
+        ctk.CTkLabel(
+            frame, text=summary,
+            font=("Verdana", 12),
+            text_color="#37474F",
+            justify="center",
+        ).pack(pady=(0, 20))
+
+        ctk.CTkButton(
+            frame,
+            text="Fermer",
+            font=("Verdana", 13, "bold"),
+            fg_color="#1565C0",
+            hover_color="#0D47A1",
+            text_color="white",
+            corner_radius=8,
+            width=140,
+            height=36,
+            command=dlg.destroy,
+        ).pack()
