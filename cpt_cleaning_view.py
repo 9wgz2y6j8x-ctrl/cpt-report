@@ -25,6 +25,7 @@ from gef_reader import read_gef_to_dataframe, GefFileError
 from despike_cleaning import hampel_peak_filter_aggressive
 from cpt_plot import CPTPlotConfig, _resolve_column_name, _detect_sampling_interval
 from tabular_reader import load_cpt_dataframe
+from units import qc_to_internal, qst_to_internal, internal_to_plot
 
 # ---------------------------------------------------------------------------
 # Palette et typographie (identiques a la maquette)
@@ -273,6 +274,28 @@ class CPTCleaningView(ctk.CTkFrame):
             show_titles=False,
             plot_pair=pair,
         )
+
+    def _convert_for_plot(self, entry, df):
+        """Convertit les colonnes qc/qst du DataFrame des unites fichier vers les unites graphiques.
+
+        Chaine : unites fichier (MPa/kN ou kg) -> interne (DaN/m2, DaN) -> paire graphique.
+        Retourne une copie du DataFrame avec les colonnes qc et qst reconverties.
+        """
+        unit_qc = entry._file_data.get("unit_qc", "MPa")
+        unit_qst = entry._file_data.get("unit_qst", "kN")
+        tip_area = self.model.settings_manager.get("unites", "tip_area_cm2") or 10.0
+        pair = self.cfg.plot_pair
+
+        df_out = df.copy()
+
+        qc_internal = qc_to_internal(df[entry.col_qc].values, unit_qc, tip_area)
+        qst_internal = qst_to_internal(df[entry.col_qst].values, unit_qst)
+
+        qc_plot, qst_plot, _, _ = internal_to_plot(qc_internal, qst_internal, pair, tip_area)
+
+        df_out[entry.col_qc] = qc_plot
+        df_out[entry.col_qst] = qst_plot
+        return df_out
 
     def on_settings_changed(self):
         """Appelee quand les reglages changent : reconstruit la config et redessine."""
@@ -776,24 +799,30 @@ class CPTCleaningView(ctk.CTkFrame):
         self._configure_axes(entry)
 
         if entry.is_filtered and entry.df_filtered is not None:
+            # Conversion des DataFrames des unites fichier vers les unites graphiques
+            df_raw_plot = self._convert_for_plot(entry, entry.df_raw)
+            df_filt_plot = self._convert_for_plot(entry, entry.df_filtered)
+
             # Brut en gris leger et plus fin
-            self._plot_data(entry, entry.df_raw,
+            self._plot_data(entry, df_raw_plot,
                             color_qc='#C0C0C0', color_qst='#D8D8D8',
                             lw_qc=cfg.qc_linewidth * 0.6,
                             lw_qst=cfg.qst_linewidth * 0.6,
                             alpha=0.7, label_suffix=" (brut)")
             # Filtre opaque (memes couleurs config, linewidth augmentee pour contraste)
-            self._plot_data(entry, entry.df_filtered,
+            self._plot_data(entry, df_filt_plot,
                             lw_qc=cfg.qc_linewidth * 1.25,
                             lw_qst=cfg.qst_linewidth * 1.25,
                             alpha=1.0, label_suffix=" (filtre)")
             # Annotations sur les donnees filtrees
-            self._draw_annotations(entry, entry.df_filtered)
+            self._draw_annotations(entry, df_filt_plot)
         else:
+            # Conversion du DataFrame des unites fichier vers les unites graphiques
+            df_raw_plot = self._convert_for_plot(entry, entry.df_raw)
             # Brut uniquement (couleurs et linewidths directement depuis config)
-            self._plot_data(entry, entry.df_raw)
+            self._plot_data(entry, df_raw_plot)
             # Annotations sur les donnees brutes
-            self._draw_annotations(entry, entry.df_raw)
+            self._draw_annotations(entry, df_raw_plot)
 
         # Titre (si active dans la config)
         if cfg.show_titles:
