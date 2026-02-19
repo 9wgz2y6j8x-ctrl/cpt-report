@@ -484,6 +484,7 @@ class SettingsView(ctk.CTkFrame):
         # Construction des sections
         self._build_section_dossiers()
         self._build_section_indexation()
+        self._build_section_unites()
         self._build_section_parametres_calcul()
         self._build_section_qualite()
         self._build_section_optimisation()
@@ -537,6 +538,206 @@ class SettingsView(ctk.CTkFrame):
             initial_value=data.get("dossier_resultats", ""),
             on_change=self._make_setter("dossiers_travail", "dossier_resultats")
         )
+
+    # ------------------------------------------------------------------
+    # Section : Unites
+    # ------------------------------------------------------------------
+    def _build_section_unites(self):
+        _SectionHeader(self._inner, "Unites")
+
+        data = self._sm.get_section("unites")
+
+        # --- Surface de pointe ---
+        self._build_numeric_param_card_generic(
+            title="Surface de pointe du cone",
+            description=(
+                "Surface de la pointe du cone penetrometrique. "
+                "Utilisee pour la conversion des valeurs historiques (kg) en pression."
+            ),
+            unit="cm\u00b2",
+            default_value=10.0,
+            current_value=data.get("tip_area_cm2", 10.0),
+            section="unites",
+            setting_key="tip_area_cm2",
+        )
+
+        # --- Plages de detection qc ---
+        self._build_numeric_param_card_generic(
+            title="Seuil max qc pour detection MPa",
+            description="Si le P99 des valeurs absolues de qc est inferieur ou egal a ce seuil, l'unite est detectee comme MPa.",
+            unit="",
+            default_value=70.0,
+            current_value=data.get("qc_mpa_max", 70.0),
+            section="unites",
+            setting_key="qc_mpa_max",
+        )
+
+        self._build_numeric_param_card_generic(
+            title="Seuil max qc pour detection kg",
+            description="Si le P99 des valeurs absolues de qc est inferieur ou egal a ce seuil (et superieur au seuil MPa), l'unite est detectee comme kg.",
+            unit="",
+            default_value=7000.0,
+            current_value=data.get("qc_kg_max", 7000.0),
+            section="unites",
+            setting_key="qc_kg_max",
+        )
+
+        # --- Plages de detection Qst ---
+        self._build_numeric_param_card_generic(
+            title="Seuil max Qst pour detection kN",
+            description="Si le P99 des valeurs absolues de Qst est inferieur ou egal a ce seuil, l'unite est detectee comme kN.",
+            unit="",
+            default_value=600.0,
+            current_value=data.get("qst_kn_max", 600.0),
+            section="unites",
+            setting_key="qst_kn_max",
+        )
+
+        self._build_numeric_param_card_generic(
+            title="Seuil max Qst pour detection kg",
+            description="Si le P99 des valeurs absolues de Qst est inferieur ou egal a ce seuil (et superieur au seuil kN), l'unite est detectee comme kg.",
+            unit="",
+            default_value=60000.0,
+            current_value=data.get("qst_kg_max", 60000.0),
+            section="unites",
+            setting_key="qst_kg_max",
+        )
+
+        # --- Percentile ---
+        _ComboSettingCard(
+            self._inner,
+            title="Percentile pour la detection des unites",
+            description=(
+                "Percentile utilise pour evaluer les plages de valeurs. "
+                "99% est recommande pour ignorer les valeurs aberrantes."
+            ),
+            values=[95, 97, 99],
+            initial_value=int(data.get("percentile", 99)),
+            on_change=self._make_setter_float("unites", "percentile"),
+        )
+
+        # --- Paire de sortie graphique ---
+        _ComboSettingCard(
+            self._inner,
+            title="Unites du graphique CPT",
+            description="Choix des unites affichees sur le graphique CPT (axes et labels).",
+            values=["MPa / kN", "kg/cm\u00b2 / kg"],
+            initial_value=self._pair_key_to_label(data.get("paire_graphique", "MPa_kN")),
+            on_change=self._on_plot_pair_changed,
+            convert_int=False,
+        )
+
+    def _pair_key_to_label(self, key: str) -> str:
+        """Convertit une cle de paire graphique en label lisible."""
+        mapping = {"MPa_kN": "MPa / kN", "kg_kg": "kg/cm\u00b2 / kg"}
+        return mapping.get(key, "MPa / kN")
+
+    def _pair_label_to_key(self, label: str) -> str:
+        """Convertit un label de paire graphique en cle."""
+        mapping = {"MPa / kN": "MPa_kN", "kg/cm\u00b2 / kg": "kg_kg"}
+        return mapping.get(label, "MPa_kN")
+
+    def _on_plot_pair_changed(self, label: str):
+        key = self._pair_label_to_key(label)
+        self._sm.set("unites", "paire_graphique", key)
+        self._notify_change()
+
+    def _make_setter_float(self, section: str, key: str):
+        """Setter qui convertit en float (pour les ComboBox numeriques)."""
+        def _set(value):
+            self._sm.set(section, key, float(value))
+            self._notify_change()
+        return _set
+
+    def _build_numeric_param_card_generic(self, title: str, description: str,
+                                           unit: str, default_value, current_value,
+                                           section: str, setting_key: str,
+                                           warning_text: str = ""):
+        """Construit une carte de parametre numerique pour une section quelconque."""
+        card = _SettingCard(self._inner)
+
+        text_frame = ctk.CTkFrame(card, fg_color="transparent")
+        text_frame.pack(side="left", fill="both", expand=True, padx=16, pady=10)
+
+        ctk.CTkLabel(
+            text_frame, text=title, font=_FONTS["param_name"],
+            text_color=_COLORS["label_primary"], anchor="w"
+        ).pack(anchor="w")
+
+        ctk.CTkLabel(
+            text_frame, text=description, font=_FONTS["param_desc"],
+            text_color=_COLORS["label_secondary"], anchor="w",
+            justify="left", wraplength=520
+        ).pack(anchor="w", pady=(2, 0))
+
+        warning_lbl = ctk.CTkLabel(
+            text_frame, text="",
+            font=("Verdana", 11),
+            text_color="#CC6600", anchor="w",
+            justify="left", wraplength=520
+        )
+        warning_lbl.pack(anchor="w", pady=(2, 0))
+
+        right_frame = ctk.CTkFrame(card, fg_color="transparent")
+        right_frame.pack(side="right", padx=(0, 16), pady=10)
+
+        input_row = ctk.CTkFrame(right_frame, fg_color="transparent")
+        input_row.pack()
+
+        var = ctk.StringVar(value=str(current_value))
+        entry = ctk.CTkEntry(
+            input_row, textvariable=var,
+            font=_FONTS["param_value"],
+            fg_color=_COLORS["input_bg"],
+            border_color=_COLORS["input_border"],
+            border_width=1, corner_radius=6, height=34, width=90,
+            justify="center"
+        )
+        entry.pack(side="left")
+
+        if unit:
+            ctk.CTkLabel(
+                input_row, text=unit, font=_FONTS["param_desc"],
+                text_color=_COLORS["label_secondary"]
+            ).pack(side="left", padx=(4, 0))
+
+        reset_btn = ctk.CTkButton(
+            right_frame, text="Par defaut",
+            font=("Verdana", 11),
+            fg_color="transparent",
+            hover_color="#E0E4F0",
+            text_color=_COLORS["accent"],
+            border_width=1, border_color=_COLORS["input_border"],
+            corner_radius=6, width=90, height=28,
+            command=lambda: self._reset_generic_param(
+                var, default_value, section, setting_key, warning_lbl
+            )
+        )
+        reset_btn.pack(pady=(6, 0))
+
+        def on_value_changed(*_args):
+            raw = var.get().strip()
+            try:
+                val = float(raw)
+            except ValueError:
+                return
+            self._sm.set(section, setting_key, val)
+            self._notify_change()
+            if warning_text and val != default_value:
+                warning_lbl.configure(text=warning_text)
+            else:
+                warning_lbl.configure(text="")
+
+        var.trace_add("write", on_value_changed)
+
+        if warning_text and current_value != default_value:
+            warning_lbl.configure(text=warning_text)
+
+    def _reset_generic_param(self, var, default_value, section, setting_key, warning_lbl):
+        var.set(str(default_value))
+        self._sm.set(section, setting_key, default_value)
+        self._notify_change()
+        warning_lbl.configure(text="")
 
     # ------------------------------------------------------------------
     # Section : Contrôle de la qualité des essais

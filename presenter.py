@@ -4,6 +4,7 @@ from tkinter import filedialog
 from model import AppModel
 from view import AppView
 from import_assistant import ImportAssistant
+from units import detect_file_units
 
 class AppPresenter:
     def __init__(self, model, view):
@@ -98,11 +99,22 @@ class AppPresenter:
 
     # ──────────────────────── Ajout aux données brutes ────────────────────────
 
+    def _enrich_with_units(self, file_data):
+        """Detecte et ajoute les unites qc/Qst au file_data si absentes."""
+        if "unit_qc" not in file_data or "unit_qst" not in file_data:
+            settings = self.model.settings_manager.get_section("unites")
+            units_info = detect_file_units(file_data, settings)
+            file_data.setdefault("unit_qc", units_info["unit_qc"])
+            file_data.setdefault("unit_qst", units_info["unit_qst"])
+        return file_data
+
     def on_add_to_raw_data(self, file_data):
         """Ajoute un fichier unique aux données brutes."""
         if not file_data or not file_data.get("file_path"):
             self._show_toast("Fichier invalide (chemin manquant)")
             return
+
+        file_data = self._enrich_with_units(file_data)
 
         rdm = self.model.raw_data_manager
         result = rdm.add_file(file_data)
@@ -118,6 +130,8 @@ class AppPresenter:
         """Ajoute plusieurs fichiers aux données brutes."""
         if not files_data:
             return
+        for fd in files_data:
+            self._enrich_with_units(fd)
         result = self.model.raw_data_manager.add_files(files_data)
         added = result["added"]
         duplicates = result["duplicates"]

@@ -21,6 +21,8 @@ class RawDataManager:
 
     # Champs éditables par l'utilisateur (correspondance clé interne -> label)
     EDITABLE_FIELDS = ["Job Number", "TestNumber", "Date", "Location", "Street"]
+    # Champs d'unités modifiables (séparés des champs texte éditables)
+    UNIT_FIELDS = {"unit_qc": ["MPa", "kg"], "unit_qst": ["kN", "kg"]}
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -261,6 +263,30 @@ class RawDataManager:
                 if not self._overrides[file_path]:
                     del self._overrides[file_path]
                 self._notify()
+
+    # ──────────────────────── Gestion des unités ────────────────────────
+
+    def set_unit(self, file_path: str, field: str, value: str):
+        """
+        Définit l'unité (unit_qc ou unit_qst) pour un fichier donné.
+        Stocke directement dans _files (pas dans _overrides).
+        """
+        if field not in self.UNIT_FIELDS:
+            return
+        if value not in self.UNIT_FIELDS[field]:
+            return
+        with self._lock:
+            if file_path in self._files:
+                self._files[file_path][field] = value
+                self._notify()
+
+    def get_unit(self, file_path: str, field: str) -> str:
+        """Retourne l'unité stockée pour un fichier, ou la valeur par défaut."""
+        defaults = {"unit_qc": "MPa", "unit_qst": "kN"}
+        with self._lock:
+            if file_path in self._files:
+                return self._files[file_path].get(field, defaults.get(field, ""))
+            return defaults.get(field, "")
 
 def get_resource_path(relative_path):
     """Obtient le chemin vers les ressources, que ce soit en dev ou en exe."""

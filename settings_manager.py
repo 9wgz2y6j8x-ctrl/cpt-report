@@ -50,6 +50,15 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "largeur_semelle_fondation_1": 0.6,
         "largeur_semelle_fondation_2": 1.5,
     },
+    "unites": {
+        "qc_mpa_max": 70.0,
+        "qc_kg_max": 7000.0,
+        "qst_kn_max": 600.0,
+        "qst_kg_max": 60000.0,
+        "percentile": 99.0,
+        "tip_area_cm2": 10.0,
+        "paire_graphique": "MPa_kN",
+    },
     "machines": [],
 }
 

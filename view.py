@@ -1811,12 +1811,16 @@ class RawDataWorkspaceView(ctk.CTkFrame):
 
     # Configuration des colonnes : (col_id, label en-tête, field_key modèle, weight grille, editable)
     COLUMNS_CONFIG = [
-        {"id": "fichier",  "text": "Fichier",      "key": None,         "weight": 2, "minwidth": 150},
-        {"id": "dossier",  "text": "N° Dossier",   "key": "Job Number", "weight": 1, "minwidth": 80},
-        {"id": "essai",    "text": "N° Essai",     "key": "TestNumber", "weight": 1, "minwidth": 60},
-        {"id": "date",     "text": "Date",          "key": "Date",       "weight": 1, "minwidth": 80},
-        {"id": "lieu",     "text": "Lieu",           "key": "Location",   "weight": 2, "minwidth": 120},
-        {"id": "rue",      "text": "Rue",            "key": "Street",     "weight": 2, "minwidth": 120},
+        {"id": "fichier",   "text": "Fichier",      "key": None,         "weight": 2, "minwidth": 150},
+        {"id": "dossier",   "text": "N° Dossier",   "key": "Job Number", "weight": 1, "minwidth": 80},
+        {"id": "essai",     "text": "N° Essai",     "key": "TestNumber", "weight": 1, "minwidth": 60},
+        {"id": "date",      "text": "Date",          "key": "Date",       "weight": 1, "minwidth": 80},
+        {"id": "lieu",      "text": "Lieu",           "key": "Location",   "weight": 2, "minwidth": 120},
+        {"id": "rue",       "text": "Rue",            "key": "Street",     "weight": 2, "minwidth": 120},
+        {"id": "unit_qc",   "text": "Unite qc",     "key": "unit_qc",    "weight": 1, "minwidth": 70,
+         "unit_field": True, "unit_values": ["MPa", "kg"]},
+        {"id": "unit_qst",  "text": "Unite Qst",    "key": "unit_qst",   "weight": 1, "minwidth": 70,
+         "unit_field": True, "unit_values": ["kN", "kg"]},
     ]
 
     def __init__(self, parent, model, presenter, *args, **kwargs):
@@ -2172,6 +2176,8 @@ class RawDataWorkspaceView(ctk.CTkFrame):
             fp = f.get("file_path", "")
             if col["key"] is None:
                 value = f.get("file_name", "")
+            elif col.get("unit_field"):
+                value = f.get(col["key"], "")
             else:
                 value = rdm.get_effective_value(fp, col["key"])
 
@@ -2235,6 +2241,9 @@ class RawDataWorkspaceView(ctk.CTkFrame):
                 for col in self.COLUMNS_CONFIG:
                     if col["key"] is None:
                         values.append(f.get("file_name", ""))
+                    elif col.get("unit_field"):
+                        # Colonnes d'unites : lire directement depuis file_data
+                        values.append(f.get(col["key"], ""))
                     else:
                         eff = rdm.get_effective_value(fp, col["key"])
                         if rdm.has_override(fp, col["key"]):
@@ -2349,7 +2358,10 @@ class RawDataWorkspaceView(ctk.CTkFrame):
         if col_cfg["key"] is None:
             return
 
-        self._start_inline_edit(item, col, col_cfg["key"])
+        if col_cfg.get("unit_field"):
+            self._start_unit_dropdown(item, col, col_cfg)
+        else:
+            self._start_inline_edit(item, col, col_cfg["key"])
 
     def _start_inline_edit(self, item, col, field_key):
         """Crée un Entry widget superposé à la cellule pour l'édition."""
@@ -2419,6 +2431,51 @@ class RawDataWorkspaceView(ctk.CTkFrame):
             self._edit_item = None
             self._edit_field = None
             self._edit_col = None
+
+    # ──────────────────────── Dropdown unite ────────────────────────
+
+    def _start_unit_dropdown(self, item, col, col_cfg):
+        """Cree un dropdown (Combobox) pour modifier l'unite d'un fichier."""
+        self._cancel_edit()
+
+        try:
+            bbox = self.tree.bbox(item, col)
+        except Exception:
+            return
+        if not bbox:
+            return
+        x, y, w, h = bbox
+
+        rdm = self.model.raw_data_manager
+        current_value = rdm.get_unit(item, col_cfg["key"])
+        unit_values = col_cfg.get("unit_values", [])
+
+        combo = ttk.Combobox(
+            self.tree,
+            values=unit_values,
+            state="readonly",
+            font=("Verdana", 12),
+        )
+        combo.set(current_value)
+        combo.place(x=x, y=y, width=w, height=h)
+        combo.focus_set()
+
+        self._edit_widget = combo
+        self._edit_item = item
+        self._edit_field = col_cfg["key"]
+        self._edit_col = col
+
+        def on_selected(event=None):
+            new_val = combo.get()
+            fp = self._edit_item
+            field = self._edit_field
+            self._cancel_edit()
+            if new_val and fp and field:
+                rdm.set_unit(fp, field, new_val)
+
+        combo.bind("<<ComboboxSelected>>", on_selected)
+        combo.bind("<Escape>", lambda e: self._cancel_edit())
+        combo.bind("<FocusOut>", lambda e: on_selected())
 
     # ──────────────────────── Navigation clavier ────────────────────────
 
