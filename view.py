@@ -8,6 +8,7 @@ from model import get_resource_path
 from settings_view import SettingsView
 from cpt_cleaning_view import CPTCleaningView
 from observations_view3 import ObservationsView
+from cotes_view import CotesView
 from home_view import HomeView
 
 
@@ -44,7 +45,7 @@ class TopMenuView(ctk.CTkFrame):
 
         self.menu_action_buttons = ctk.CTkSegmentedButton(
             self.segmented_button_frame,
-            values=["DONNÉES BRUTES", "FILTRER", "OBSERVATIONS", "EXTRACTIONS", "TRAITER"],
+            values=["DONNÉES BRUTES", "FILTRER", "OBSERVATIONS", "COTES", "EXTRACTIONS", "TRAITER"],
             command=self.on_menu_action_changed,
             font=self.model.main_menu_font,
             fg_color="#404040",
@@ -3290,6 +3291,11 @@ class AppView(ctk.CTk):
         self.observations_view = ObservationsView(workspace2, self.model, self.presenter)
         self.observations_view.pack(fill="both", expand=True)
 
+        # Workspace COTES
+        workspace_cotes = ctk.CTkFrame(parent, fg_color="#E8EDF2", corner_radius=0)
+        self.cotes_view = CotesView(workspace_cotes, self.model, self.presenter)
+        self.cotes_view.pack(fill="both", expand=True)
+
         # Workspace 3 : EXTRACTIONS
         workspace3 = ctk.CTkFrame(parent, fg_color="white", corner_radius=0)
 
@@ -3320,6 +3326,7 @@ class AppView(ctk.CTk):
             "DONNÉES BRUTES": workspace1,
             "FILTRER": workspace_filtrer,
             "OBSERVATIONS": workspace2,
+            "COTES": workspace_cotes,
             "EXTRACTIONS": workspace3,
             "TRAITER": workspace4,
             "RECHERCHE RAPIDE": workspace_quick_search,
@@ -3334,6 +3341,8 @@ class AppView(ctk.CTk):
                 self.cleaning_view.on_workspace_hidden()
             if hasattr(self, 'observations_view'):
                 self.observations_view.on_workspace_hidden()
+            if hasattr(self, 'cotes_view'):
+                self.cotes_view.on_workspace_hidden()
 
             for workspace in self.workspaces.values():
                 workspace.place_forget()
@@ -3346,6 +3355,8 @@ class AppView(ctk.CTk):
                 self.cleaning_view.on_workspace_shown()
             if workspace_name == "OBSERVATIONS" and hasattr(self, 'observations_view'):
                 self.observations_view.on_workspace_shown()
+            if workspace_name == "COTES" and hasattr(self, 'cotes_view'):
+                self.cotes_view.on_workspace_shown()
 
     def focus_search_entry(self):
         """Met le focus sur le champ de recherche."""

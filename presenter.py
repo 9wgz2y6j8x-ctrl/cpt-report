@@ -28,7 +28,7 @@ class AppPresenter:
 
             # Désélectionner le segmented button si on navigue vers un workspace
             # qui n'en fait pas partie (PREFERENCES, RECHERCHE RAPIDE)
-            segmented_values = ["DONNÉES BRUTES", "FILTRER", "OBSERVATIONS", "EXTRACTIONS", "TRAITER"]
+            segmented_values = ["DONNÉES BRUTES", "FILTRER", "OBSERVATIONS", "COTES", "EXTRACTIONS", "TRAITER"]
             if workspace_name not in segmented_values:
                 if hasattr(self.view, "top_menu_view"):
                     self.view.top_menu_view.deselect_all()
