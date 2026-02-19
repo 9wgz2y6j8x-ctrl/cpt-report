@@ -414,7 +414,6 @@ class _GpkgImportDialog(ctk.CTkToplevel):
                  saved_prefs: Optional[dict] = None):
         super().__init__(parent)
         self.title("Import GeoPackage — Sélection des champs")
-        self.geometry("520x420")
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
@@ -424,6 +423,14 @@ class _GpkgImportDialog(ctk.CTkToplevel):
         self._fields: List[str] = []
         self._result: Optional[dict] = None
         self._saved_prefs = saved_prefs or {}
+
+        # Dimensionner et centrer sur la fenêtre parente
+        w, h = 520, 420
+        self.geometry(f"{w}x{h}")
+        self.update_idletasks()
+        x = parent.winfo_x() + (parent.winfo_width() - w) // 2
+        y = parent.winfo_y() + (parent.winfo_height() - h) // 2
+        self.geometry(f"+{x}+{y}")
 
         self._build_ui()
 
