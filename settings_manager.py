@@ -71,8 +71,10 @@ DEFAULT_MACHINE: Dict[str, Any] = {
     "id": "",
     "nom": "Nouvelle machine",
     "capacite_tonnes": 20,
-    "poids_tube_penetration": 0.0,
-    "poids_tige_interieure": 0.0,
+    "poids_tube_petite_section": 0.0,
+    "poids_tube_grande_section": 0.0,
+    "poids_tige_petite_section": 0.0,
+    "poids_tige_grande_section": 0.0,
     "nb_tubes_avant_sol": 0,
 }
 
@@ -120,7 +122,9 @@ class SettingsManager:
 
         for section_key, section_default in defaults.items():
             if section_key == "machines":
-                self._settings["machines"] = data.get("machines", [])
+                self._settings["machines"] = self._migrate_machines(
+                    data.get("machines", [])
+                )
                 continue
             if isinstance(section_default, dict):
                 loaded_section = data.get(section_key, {})
@@ -133,6 +137,30 @@ class SettingsManager:
                 self._settings[section_key] = merged
             else:
                 self._settings[section_key] = data.get(section_key, section_default)
+
+    @staticmethod
+    def _migrate_machines(machines: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Migre les machines depuis l'ancien format (poids unique) vers le nouveau
+        (petite/grande section). Les anciennes valeurs sont recopiées dans les deux
+        sections pour ne pas perdre de données."""
+        migrated = []
+        for m in machines:
+            m = dict(m)
+            # Migration poids_tube_penetration → petite/grande section
+            if "poids_tube_penetration" in m:
+                old_val = m.pop("poids_tube_penetration")
+                m.setdefault("poids_tube_petite_section", old_val)
+                m.setdefault("poids_tube_grande_section", old_val)
+            # Migration poids_tige_interieure → petite/grande section
+            if "poids_tige_interieure" in m:
+                old_val = m.pop("poids_tige_interieure")
+                m.setdefault("poids_tige_petite_section", old_val)
+                m.setdefault("poids_tige_grande_section", old_val)
+            # Assurer que les clés existent avec les défauts
+            for key, default_val in DEFAULT_MACHINE.items():
+                m.setdefault(key, default_val)
+            migrated.append(m)
+        return migrated
 
     def save(self):
         """Persiste les réglages sur disque."""

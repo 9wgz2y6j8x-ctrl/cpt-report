@@ -9,6 +9,7 @@ from settings_view import SettingsView
 from cpt_cleaning_view import CPTCleaningView
 from observations_view3 import ObservationsView
 from cotes_view import CotesView
+from traiter_view import TraiterView
 from home_view import HomeView
 
 
@@ -3299,11 +3300,10 @@ class AppView(ctk.CTk):
         # Workspace 3 : EXTRACTIONS
         workspace3 = ctk.CTkFrame(parent, fg_color="white", corner_radius=0)
 
-        # Workspace 4 : TRAITER (avec panneaux de paramètres CPT)
-        workspace4 = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=0)
-        self.create_CPTborehole_parameters_frame(workspace4, (20, 25))
-        self.create_CPTborehole_parameters_frame(workspace4, (20, 225))
-        self.create_CPTborehole_parameters_frame(workspace4, (20, 425))
+        # Workspace 4 : TRAITER (vue de synthese des essais)
+        workspace4 = ctk.CTkFrame(parent, fg_color="#E8EDF2", corner_radius=0)
+        self.traiter_view = TraiterView(workspace4, self.model, self.presenter)
+        self.traiter_view.pack(fill="both", expand=True)
 
         # Workspace RECHERCHE RAPIDE (avec l'interface de recherche)
         workspace_quick_search = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=0)
@@ -3343,6 +3343,8 @@ class AppView(ctk.CTk):
                 self.observations_view.on_workspace_hidden()
             if hasattr(self, 'cotes_view'):
                 self.cotes_view.on_workspace_hidden()
+            if hasattr(self, 'traiter_view'):
+                self.traiter_view.on_workspace_hidden()
 
             for workspace in self.workspaces.values():
                 workspace.place_forget()
@@ -3357,60 +3359,13 @@ class AppView(ctk.CTk):
                 self.observations_view.on_workspace_shown()
             if workspace_name == "COTES" and hasattr(self, 'cotes_view'):
                 self.cotes_view.on_workspace_shown()
+            if workspace_name == "TRAITER" and hasattr(self, 'traiter_view'):
+                self.traiter_view.on_workspace_shown()
 
     def focus_search_entry(self):
         """Met le focus sur le champ de recherche."""
         if hasattr(self, 'quick_search_zone'):
             self.quick_search_zone.focus_search_entry()
-
-    def create_CPTborehole_parameters_frame(self, parent, place_coordinates):
-        """Exemple de création d'un panneau paramétrable (CPT Borehole)."""
-        borehole_settings_panel = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=20, width=1200)
-        borehole_settings_panel.place(x=place_coordinates[0], y=place_coordinates[1])
-
-        title_frame = ctk.CTkFrame(borehole_settings_panel, width=180, height=40, corner_radius=10, fg_color="#1E56A0")
-        title_frame.place(x=0, y=0)
-        title_label = ctk.CTkLabel(title_frame, text="SONDAGE P2BIS", text_color="white", font=("Arial", 15, "bold"))
-        title_label.place(relx=0.5, rely=0.5, anchor="center")
-
-        content_frame = ctk.CTkFrame(borehole_settings_panel, width=700, height=150, corner_radius=24, border_color="grey", border_width=1, fg_color="white")
-        content_frame.place(x=15, y=20)
-        content_frame.lower(title_frame)
-
-        font_style = ("Arial", 14)
-        offset_y = 0.10
-
-        # Labels des paramètres
-        labels_data = [
-            ("Matériel utilisé", (0.03, 0.05 + offset_y), "bold"),
-            ("Machine : Volvo V2", (0.03, 0.2 + offset_y), "normal"),
-            ("Capacité : 20 t", (0.03, 0.35 + offset_y), "normal"),
-            ("Delta petit mano : 20", (0.03, 0.5 + offset_y), "normal"),
-            ("Delta grand mano : -100", (0.03, 0.65 + offset_y), "normal"),
-            ("Cote de départ : -0,10 m", (0.32, 0.05 + offset_y), "normal"),
-            ("Niveau d'eau", (0.32, 0.35 + offset_y), "bold"),
-            ("Fin d'essai : 5,6 m", (0.32, 0.5 + offset_y), "normal"),
-            ("Fin de chantier : 5,4 m", (0.32, 0.65 + offset_y), "normal"),
-            ("Eboulement", (0.57, 0.35 + offset_y), "bold"),
-            ("Fin d'essai : 6,10 m", (0.57, 0.5 + offset_y), "normal"),
-            ("Fin de chantier : 6,10 m", (0.57, 0.65 + offset_y), "normal"),
-        ]
-
-        for text, (relx, rely), weight in labels_data:
-            font = (font_style[0], font_style[1], weight) if weight == "bold" else font_style
-            label = ctk.CTkLabel(content_frame, text=text, font=font)
-            label.place(relx=relx, rely=rely)
-
-        # Boutons
-        depth_button = ctk.CTkButton(content_frame, text="18.60 m", font=("Arial", 12, "bold"), 
-                                   fg_color="light grey", corner_radius=8, width=22, 
-                                   text_color="black", border_color="grey", border_width=1)
-        depth_button.place(relx=0.75, rely=0.05 + offset_y)
-
-        date_button = ctk.CTkButton(content_frame, text="17/07/2024", font=("Arial", 12, "bold"), 
-                                  fg_color="light grey", corner_radius=8, width=22, 
-                                  text_color="black", border_color="grey", border_width=1)
-        date_button.place(relx=0.85, rely=0.05 + offset_y)
 
     def bind_events(self):
         """Bind de certains événements globaux (ex : redimensionnement) pour dessiner le dégradé de la barre de menu."""
