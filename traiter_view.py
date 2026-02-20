@@ -106,15 +106,15 @@ class TraiterView(ctk.CTkFrame):
     # ──────── Colonnes ────────
 
     _COLUMNS = [
-        ("job", "N\u00b0 dossier", 130, "w"),
-        ("test", "N\u00b0 essai", 100, "center"),
-        ("machine", "Machine", 100, "w"),
-        ("section", "Section tube", 100, "center"),
-        ("delta_petit", "\u03b4 Petit Mano", 100, "center"),
-        ("delta_grand", "\u03b4 Grand Mano", 100, "center"),
+        ("job", "N\u00b0 dossier", 70, "center"),
+        ("test", "N\u00b0 essai", 70, "center"),
+        ("machine", "Machine", 110, "w"),
+        ("section", "Section tube", 80, "center"),
+        ("delta_petit", "\u03b4 Petit Mano", 95, "center"),
+        ("delta_grand", "\u03b4 Grand Mano", 95, "center"),
         ("prof_atteinte", "Prof. atteinte (m)", 120, "center"),
-        ("prof_arrondie", "Prof. arrondie (m)", 120, "center"),
-        ("alpha", "\u03b1", 60, "center"),
+        ("prof_arrondie", "Prof. arrondie (m)", 125, "center"),
+        ("alpha", "\u03b1", 50, "center"),
     ]
 
     # Colonnes editables et leur type d'edition
