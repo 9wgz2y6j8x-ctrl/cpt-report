@@ -296,11 +296,21 @@ class _MachineCard(ctk.CTkFrame):
              str(data.get("capacite_tonnes", 20)), 0, 2),
             ("Tubes avant le sol", "nb_tubes_avant_sol", "combo",
              str(data.get("nb_tubes_avant_sol", 0)), 0, 4),
-            ("Poids tube pénétration (kg)", "poids_tube_penetration", "entry",
-             str(data.get("poids_tube_penetration", 0.0)), 1, 0),
-            ("Poids tige intérieure (kg)", "poids_tige_interieure", "entry",
-             str(data.get("poids_tige_interieure", 0.0)), 1, 2),
         ]
+
+        # Champs par section (petite / grande)
+        section_fields_def = [
+            ("Poids tube – Petite section (kg)", "poids_tube_petite_section", "entry",
+             str(data.get("poids_tube_petite_section", 0.0)), 1, 0),
+            ("Poids tube – Grande section (kg)", "poids_tube_grande_section", "entry",
+             str(data.get("poids_tube_grande_section", 0.0)), 1, 2),
+            ("Poids tige int. – Petite section (kg)", "poids_tige_petite_section", "entry",
+             str(data.get("poids_tige_petite_section", 0.0)), 2, 0),
+            ("Poids tige int. – Grande section (kg)", "poids_tige_grande_section", "entry",
+             str(data.get("poids_tige_grande_section", 0.0)), 2, 2),
+        ]
+
+        fields_def.extend(section_fields_def)
 
         self._field_widgets: Dict[str, Any] = {}
 
@@ -398,17 +408,21 @@ class _MachineCard(ctk.CTkFrame):
             capacite = max(self._CAPACITY_RANGE[0],
                            min(self._CAPACITY_RANGE[1], capacite))
 
-            poids_tube = float(
-                self._field_widgets["poids_tube_penetration"][0].get().strip() or "0"
-            )
-            poids_tube = max(self._WEIGHT_RANGE[0],
-                             min(self._WEIGHT_RANGE[1], poids_tube))
-
-            poids_tige = float(
-                self._field_widgets["poids_tige_interieure"][0].get().strip() or "0"
-            )
-            poids_tige = max(self._WEIGHT_RANGE[0],
-                             min(self._WEIGHT_RANGE[1], poids_tige))
+            # Poids par section (petite / grande)
+            weight_keys = [
+                "poids_tube_petite_section",
+                "poids_tube_grande_section",
+                "poids_tige_petite_section",
+                "poids_tige_grande_section",
+            ]
+            weight_values = {}
+            for wk in weight_keys:
+                val = float(
+                    self._field_widgets[wk][0].get().strip() or "0"
+                )
+                val = max(self._WEIGHT_RANGE[0],
+                          min(self._WEIGHT_RANGE[1], val))
+                weight_values[wk] = val
 
             nb_tubes = int(
                 self._field_widgets["nb_tubes_avant_sol"][0].get().strip() or "0"
@@ -417,14 +431,13 @@ class _MachineCard(ctk.CTkFrame):
             # Update displayed values to reflect clamped values
             self._field_widgets["nom"][0].set(nom)
             self._field_widgets["capacite_tonnes"][0].set(str(capacite))
-            self._field_widgets["poids_tube_penetration"][0].set(str(poids_tube))
-            self._field_widgets["poids_tige_interieure"][0].set(str(poids_tige))
+            for wk in weight_keys:
+                self._field_widgets[wk][0].set(str(weight_values[wk]))
 
             return {
                 "nom": nom,
                 "capacite_tonnes": capacite,
-                "poids_tube_penetration": poids_tube,
-                "poids_tige_interieure": poids_tige,
+                **weight_values,
                 "nb_tubes_avant_sol": nb_tubes,
             }
         except (ValueError, KeyError):
