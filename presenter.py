@@ -205,9 +205,9 @@ class AppPresenter:
         pass
 
     def _handle_material_settings(self):
-        """Gère les réglages du matériel."""
-        print("Matériel utilisé cliqué")
-        # TODO: Implémenter la logique des réglages matériel
+        """Ouvre la modale de sélection du matériel pour tous les essais."""
+        if hasattr(self.view, 'traiter_view'):
+            self.view.traiter_view.show_equipment_modal()
 
     def _handle_date_settings(self):
         """Ouvre un sélecteur de date et applique la date choisie aux essais sélectionnés."""

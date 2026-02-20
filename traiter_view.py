@@ -698,3 +698,109 @@ class TraiterView(ctk.CTkFrame):
             })
 
         return result
+
+    # ──────── Modale : sélection du matériel ────────
+
+    def show_equipment_modal(self):
+        """Ouvre une fenêtre modale pour choisir le matériel appliqué à tous les essais."""
+        machines = self.model.settings_manager.get_machines()
+        machine_names = sorted(
+            [m.get("nom", "") for m in machines if m.get("nom")],
+            key=str.lower,
+        )
+
+        count = len(self._essai_params)
+
+        root = self.winfo_toplevel()
+        dialog = ctk.CTkToplevel(root)
+        dialog.title("Matériel utilisé")
+        dialog.resizable(False, False)
+        dialog.grab_set()
+        dialog.transient(root)
+
+        # Hauteur adaptée au nombre de machines (min 380, max 580)
+        card_area_h = min(max(len(machine_names), 1) * 76, 360)
+        w, h = 480, 130 + card_area_h + (60 if not machine_names else 0)
+        h = max(380, min(h, 580))
+        dialog.geometry(f"{w}x{h}")
+        dialog.update_idletasks()
+        x = root.winfo_x() + (root.winfo_width() - w) // 2
+        y = root.winfo_y() + (root.winfo_height() - h) // 2
+        dialog.geometry(f"+{x}+{y}")
+
+        frame = ctk.CTkFrame(dialog, fg_color="#FFFFFF", corner_radius=0)
+        frame.pack(fill="both", expand=True)
+
+        # En-tête
+        header = ctk.CTkFrame(frame, fg_color="#0115B8", corner_radius=0, height=44)
+        header.pack(fill="x")
+        header.pack_propagate(False)
+        ctk.CTkLabel(
+            header,
+            text="Choisir le matériel utilisé",
+            font=("Verdana", 15, "bold"),
+            text_color="white",
+        ).pack(padx=15, pady=10)
+
+        # Indication
+        if count > 0:
+            info_text = f"Sera appliqué à tous les {count} essai(s)."
+        else:
+            info_text = "Aucun essai chargé."
+        ctk.CTkLabel(
+            frame,
+            text=info_text,
+            font=("Verdana", 11, "italic"),
+            text_color="#757575",
+        ).pack(pady=(10, 4))
+
+        def do_select(name):
+            for fp in self._essai_params:
+                self._essai_params[fp]["machine"] = name
+            self.refresh_data()
+            dialog.destroy()
+
+        if not machine_names:
+            ctk.CTkLabel(
+                frame,
+                text="Aucune machine définie.\nRendez-vous dans Réglages pour en ajouter.",
+                font=("Verdana", 12),
+                text_color="#9E9E9E",
+                justify="center",
+            ).pack(expand=True)
+        else:
+            scroll_frame = ctk.CTkScrollableFrame(
+                frame,
+                fg_color="#F5F7FA",
+                corner_radius=8,
+            )
+            scroll_frame.pack(fill="both", expand=True, padx=20, pady=(4, 8))
+
+            for name in machine_names:
+                ctk.CTkButton(
+                    scroll_frame,
+                    text=name,
+                    font=("Verdana", 13, "bold"),
+                    fg_color="#FFFFFF",
+                    hover_color="#E8EDF8",
+                    text_color=COLORS["text_primary"],
+                    corner_radius=8,
+                    height=58,
+                    border_width=1,
+                    border_color=COLORS["border"],
+                    anchor="w",
+                    command=lambda n=name: do_select(n),
+                ).pack(fill="x", padx=8, pady=5)
+
+        ctk.CTkButton(
+            frame,
+            text="Annuler",
+            font=("Verdana", 13),
+            fg_color="#F5F5F5",
+            hover_color="#E0E0E0",
+            text_color="#616161",
+            corner_radius=8,
+            width=120,
+            height=36,
+            command=dialog.destroy,
+        ).pack(pady=(0, 14))
