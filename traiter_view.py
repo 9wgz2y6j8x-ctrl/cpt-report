@@ -29,9 +29,6 @@ COLORS = {
     "text_secondary": "#6B7280",
     "row_alt": "#F9FAFB",
     "border": "#D1D5DB",
-    "heading_bg": "#102A56",
-    "heading_fg": "#FFFFFF",
-    "stripe": "#EDF2FA",
 }
 
 FONTS = {
@@ -111,7 +108,7 @@ class TraiterView(ctk.CTkFrame):
     _COLUMNS = [
         ("job", "N\u00b0 dossier", 130, "w"),
         ("test", "N\u00b0 essai", 100, "center"),
-        ("machine", "Machine", 150, "w"),
+        ("machine", "Machine", 100, "w"),
         ("section", "Section tube", 100, "center"),
         ("delta_petit", "\u03b4 Petit Mano", 100, "center"),
         ("delta_grand", "\u03b4 Grand Mano", 100, "center"),
@@ -209,8 +206,8 @@ class TraiterView(ctk.CTkFrame):
         )
         style.configure(
             "Traiter.Treeview.Heading",
-            background=COLORS["heading_bg"],
-            foreground=COLORS["heading_fg"],
+            background=COLORS["accent_light"],
+            foreground=COLORS["accent"],
             font=("Verdana", 9, "bold"),
             borderwidth=1,
             relief="flat",
@@ -222,7 +219,7 @@ class TraiterView(ctk.CTkFrame):
         )
         style.map(
             "Traiter.Treeview.Heading",
-            background=[("active", "#1A3A6C")],
+            background=[("active", COLORS["accent_light"])],
         )
 
         scroll_y = ctk.CTkScrollbar(tree_container, orientation="vertical")
@@ -247,7 +244,7 @@ class TraiterView(ctk.CTkFrame):
 
         # Tags pour alternance de lignes
         self._tree.tag_configure("oddrow", background="#FFFFFF")
-        self._tree.tag_configure("evenrow", background=COLORS["stripe"])
+        self._tree.tag_configure("evenrow", background=COLORS["row_alt"])
 
         # Bindings
         self._tree.bind("<Double-1>", self._on_dblclick)

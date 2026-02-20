@@ -46,7 +46,7 @@ class TopMenuView(ctk.CTkFrame):
 
         self.menu_action_buttons = ctk.CTkSegmentedButton(
             self.segmented_button_frame,
-            values=["DONNÉES BRUTES", "FILTRER", "OBSERVATIONS", "COTES", "EXTRACTIONS", "TRAITER"],
+            values=["DONNÉES BRUTES", "FILTRER", "OBSERVATIONS", "COTES", "EXTRACTIONS", "CALCULER"],
             command=self.on_menu_action_changed,
             font=self.model.main_menu_font,
             fg_color="#404040",
@@ -3328,7 +3328,7 @@ class AppView(ctk.CTk):
             "OBSERVATIONS": workspace2,
             "COTES": workspace_cotes,
             "EXTRACTIONS": workspace3,
-            "TRAITER": workspace4,
+            "CALCULER": workspace4,
             "RECHERCHE RAPIDE": workspace_quick_search,
             "PREFERENCES": workspace5
         }
@@ -3359,7 +3359,7 @@ class AppView(ctk.CTk):
                 self.observations_view.on_workspace_shown()
             if workspace_name == "COTES" and hasattr(self, 'cotes_view'):
                 self.cotes_view.on_workspace_shown()
-            if workspace_name == "TRAITER" and hasattr(self, 'traiter_view'):
+            if workspace_name == "CALCULER" and hasattr(self, 'traiter_view'):
                 self.traiter_view.on_workspace_shown()
 
     def focus_search_entry(self):
