@@ -57,21 +57,41 @@ def _normalize(text: str) -> str:
 
 
 def _parse_float(val) -> Optional[float]:
-    """Parse une valeur numérique avec tolérance virgule/point."""
     if val is None:
         return None
     if isinstance(val, (int, float)):
         import math
-        if math.isnan(val):
-            return None
-        return float(val)
-    s = str(val).strip().replace(",", ".")
+        return None if (isinstance(val, float) and math.isnan(val)) else float(val)
+
+    s = str(val).strip()
     if not s or s == "-":
         return None
-    try:
-        return float(s)
-    except ValueError:
+
+    # formats négatifs type comptable : (0.20)
+    neg = False
+    if s.startswith("(") and s.endswith(")"):
+        neg = True
+        s = s[1:-1].strip()
+
+    # normaliser les variantes de “moins”
+    for ch in ["−", "–", "—", "‑", "﹣", "－"]:
+        s = s.replace(ch, "-")
+
+    s = s.replace(",", ".")
+
+    # si le signe est séparé par des espaces/insécables, le recoller
+    s = re.sub(r"^([+-])\s+(?=\d)", r"\1", s)
+
+    # extraire un nombre en début (sinon chercher partout)
+    m = re.search(r"^[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?", s) \
+        or re.search(r"([+-])?\s*\d+(?:\.\d+)?(?:[eE][+-]?\d+)?", s)
+    if not m:
         return None
+
+    num = re.sub(r"\s+", "", m.group(0))
+    out = float(num)
+    return -abs(out) if neg else out
+
 
 
 def _build_essai_lookup(essai_names: Dict[str, dict]) -> Dict[str, str]:
