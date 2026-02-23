@@ -265,10 +265,12 @@ def _format_worksheet(ws) -> None:
         cell.fill = _FILL_HEADER
         cell.border = _BORDER_BOTTOM
 
-    # Lignes de donnees : Courier New 11
+    # Lignes de donnees : Courier New 11 + format 0,00 pour la colonne 1
     for row in ws.iter_rows(min_row=3, max_col=_NUM_COLS):
         for cell in row:
             cell.font = _FONT_DATA
+            if cell.column == 1 and cell.value is not None:
+                cell.number_format = '0.00'
 
 
 # ──────── Generation Excel ────────
