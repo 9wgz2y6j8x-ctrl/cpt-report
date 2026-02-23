@@ -18,6 +18,8 @@ from typing import List, Dict, Any, Optional, Callable
 import numpy as np
 import pandas as pd
 from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Border, Side
+from openpyxl.utils import get_column_letter
 
 from tabular_reader import load_cpt_dataframe
 from cpt_plot import CPTPlotConfig, _resolve_column_name
@@ -28,7 +30,7 @@ logger = logging.getLogger(__name__)
 # ──────── Colonnes du rapport ────────
 
 REPORT_COLUMNS = [
-    "Profondeur",
+    "Prof.",
     "Cote",
     "qc",
     "q'0",
@@ -178,6 +180,10 @@ def _resample_depths(
             # (utile surtout pour prof_arrondie qui peut depasser les donnees)
             selected.append(float(target))
 
+    # Garantir que la derniere profondeur est exactement prof_arrondie
+    if len(selected) > 0 and prof_arrondie is not None:
+        selected[-1] = float(prof_arrondie)
+
     return np.array(selected)
 
 
@@ -222,6 +228,47 @@ def _get_dataframe_for_essai(
     except Exception as exc:
         logger.error("Erreur de chargement pour %s : %s", file_path, exc)
         return None
+
+
+# ──────── Styles Excel ────────
+
+_FONT_HEADER = Font(name="Arial", size=12, bold=True)
+_FONT_DATA = Font(name="Courier New", size=11)
+_FILL_HEADER = PatternFill(start_color="D6DCE4", end_color="D6DCE4", fill_type="solid")
+_BORDER_BOTTOM = Border(bottom=Side(style="thin", color="000000"))
+_COL_WIDTH = 12.5
+_NUM_COLS = 12
+
+
+def _format_worksheet(ws) -> None:
+    """Applique le formatage standard a une feuille de rapport.
+
+    - Largeur de colonnes : 12,5 pour les 12 colonnes
+    - Police : Courier New 11 partout, Arial 12 gras pour la ligne 1
+    - Trame de fond bleu-gris pale sur les lignes 1 et 2
+    - Bordure inferieure entre la ligne 2 et la ligne 3
+    """
+    # Largeur des colonnes
+    for col_idx in range(1, _NUM_COLS + 1):
+        ws.column_dimensions[get_column_letter(col_idx)].width = _COL_WIDTH
+
+    # Ligne 1 : Arial 12 gras + fond bleu-gris
+    for col_idx in range(1, _NUM_COLS + 1):
+        cell = ws.cell(row=1, column=col_idx)
+        cell.font = _FONT_HEADER
+        cell.fill = _FILL_HEADER
+
+    # Ligne 2 : Courier New 11 + fond bleu-gris + bordure inferieure
+    for col_idx in range(1, _NUM_COLS + 1):
+        cell = ws.cell(row=2, column=col_idx)
+        cell.font = _FONT_DATA
+        cell.fill = _FILL_HEADER
+        cell.border = _BORDER_BOTTOM
+
+    # Lignes de donnees : Courier New 11
+    for row in ws.iter_rows(min_row=3, max_col=_NUM_COLS):
+        for cell in row:
+            cell.font = _FONT_DATA
 
 
 # ──────── Generation Excel ────────
@@ -368,6 +415,9 @@ def generate_excel_reports(
             # Ecrire la colonne Profondeur (colonne 1, a partir de la ligne 3)
             for row_idx, depth_val in enumerate(resampled, start=3):
                 ws.cell(row=row_idx, column=1, value=round(depth_val, 2))
+
+            # ── Formatage de la feuille ──
+            _format_worksheet(ws)
 
         # Sauvegarder le classeur
         try:
