@@ -59,6 +59,9 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "tip_area_cm2": 10.0,
         "paire_graphique": "MPa_kN",
     },
+    "rapport": {
+        "reechantillonnage_cm": 20,
+    },
     "import_cotes_gpkg": {
         "layer": "",
         "field_station": "",

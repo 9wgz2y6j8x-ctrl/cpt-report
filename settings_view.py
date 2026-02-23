@@ -499,6 +499,7 @@ class SettingsView(ctk.CTkFrame):
         self._build_section_indexation()
         self._build_section_unites()
         self._build_section_parametres_calcul()
+        self._build_section_rapport()
         self._build_section_qualite()
         self._build_section_optimisation()
         self._build_section_machines()
@@ -751,6 +752,27 @@ class SettingsView(ctk.CTkFrame):
         self._sm.set(section, setting_key, default_value)
         self._notify_change()
         warning_lbl.configure(text="")
+
+    # ------------------------------------------------------------------
+    # Section : Rapport
+    # ------------------------------------------------------------------
+    def _build_section_rapport(self):
+        _SectionHeader(self._inner, "Rapport")
+
+        data = self._sm.get_section("rapport")
+
+        _ComboSettingCard(
+            self._inner,
+            title="Reechantillonnage des donnees pour le rapport",
+            description=(
+                "Pas vertical (en cm) utilise pour espacer les profondeurs "
+                "dans les calculs et la generation du rapport. "
+                "Par exemple, 20 cm produira des profondeurs a 0.00, 0.20, 0.40 m, etc."
+            ),
+            values=[1, 5, 10, 20],
+            initial_value=int(data.get("reechantillonnage_cm", 20)),
+            on_change=self._make_setter("rapport", "reechantillonnage_cm"),
+        )
 
     # ------------------------------------------------------------------
     # Section : Contrôle de la qualité des essais
