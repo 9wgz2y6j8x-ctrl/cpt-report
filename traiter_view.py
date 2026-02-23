@@ -14,6 +14,8 @@ Logique metier :
 
 import re
 import math
+import threading
+import logging
 import customtkinter as ctk
 from tkinter import ttk
 import tkinter as tk
@@ -176,6 +178,21 @@ class TraiterView(ctk.CTkFrame):
             command=self._move_down,
         )
         self._btn_down.pack(side="left")
+
+        self._btn_report = ctk.CTkButton(
+            btn_frame, text="Generer le rapport", font=("Verdana", 12, "bold"),
+            height=34, corner_radius=8, width=180,
+            fg_color="#16A34A", hover_color="#15803D",
+            text_color="white",
+            command=self._on_generate_report,
+        )
+        self._btn_report.pack(side="left", padx=(24, 0))
+
+        self._report_status = ctk.CTkLabel(
+            btn_frame, text="",
+            font=FONTS["small"], text_color=COLORS["text_secondary"],
+        )
+        self._report_status.pack(side="left", padx=(12, 0))
 
         # Zone de contenu
         content = ctk.CTkFrame(self, fg_color=COLORS["card"], corner_radius=8)
@@ -804,3 +821,94 @@ class TraiterView(ctk.CTkFrame):
             height=36,
             command=dialog.destroy,
         ).pack(pady=(0, 14))
+
+    # ──────── Generation du rapport ────────
+
+    def _get_cleaning_entries_map(self) -> Dict[str, Any]:
+        """Construit un mapping {file_path: CPTFileEntry} depuis la vue Filtrer.
+
+        Permet au module de rapport d'acceder aux donnees filtrees.
+        """
+        view = self.winfo_toplevel()
+        if hasattr(view, "cleaning_view"):
+            entries = getattr(view.cleaning_view, "cpt_entries", [])
+            return {e.file_path: e for e in entries}
+        return {}
+
+    def _on_generate_report(self):
+        """Declenche la generation du rapport Excel en arriere-plan."""
+        essais = self.get_ordered_essais()
+        if not essais:
+            self._report_status.configure(
+                text="Aucun essai a traiter.",
+                text_color="#DC2626",
+            )
+            return
+
+        # Desactiver le bouton pendant la generation
+        self._btn_report.configure(state="disabled")
+        self._report_status.configure(
+            text="Generation en cours...",
+            text_color=COLORS["accent"],
+        )
+
+        sm = self.model.settings_manager
+        rdm = self.model.raw_data_manager
+        cleaning_map = self._get_cleaning_entries_map()
+
+        def _run():
+            try:
+                from report_generator import generate_excel_reports
+
+                def progress_cb(current, total, msg):
+                    self.after(0, lambda c=current, t=total, m=msg:
+                              self._report_status.configure(
+                                  text=f"{c}/{t} - {m}",
+                                  text_color=COLORS["accent"],
+                              ))
+
+                result = generate_excel_reports(
+                    essais=essais,
+                    settings_manager=sm,
+                    cleaning_entries=cleaning_map,
+                    raw_data_manager=rdm,
+                    progress_callback=progress_cb,
+                )
+                self.after(0, lambda: self._on_report_done(result))
+            except Exception as exc:
+                logging.getLogger(__name__).error(
+                    "Erreur generation rapport : %s", exc, exc_info=True
+                )
+                self.after(0, lambda e=str(exc): self._on_report_error(e))
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+
+    def _on_report_done(self, result: Dict[str, str]):
+        """Callback appele quand la generation est terminee avec succes."""
+        self._btn_report.configure(state="normal")
+        n_files = len(result)
+        if n_files == 0:
+            self._report_status.configure(
+                text="Aucun fichier genere.",
+                text_color="#CC6600",
+            )
+        elif n_files == 1:
+            path = list(result.values())[0]
+            self._report_status.configure(
+                text=f"Rapport genere : {path}",
+                text_color="#16A34A",
+            )
+        else:
+            self._report_status.configure(
+                text=f"{n_files} rapports generes avec succes.",
+                text_color="#16A34A",
+            )
+
+    def _on_report_error(self, error_msg: str):
+        """Callback appele en cas d'erreur lors de la generation."""
+        self._btn_report.configure(state="normal")
+        self._report_status.configure(
+            text=f"Erreur : {error_msg}",
+            text_color="#DC2626",
+        )
