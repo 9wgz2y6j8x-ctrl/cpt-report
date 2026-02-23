@@ -835,6 +835,14 @@ class TraiterView(ctk.CTkFrame):
             return {e.file_path: e for e in entries}
         return {}
 
+    def _get_cotes_map(self) -> Dict[str, float]:
+        """Recupere le mapping {file_path: cote_de_depart} depuis la vue Cotes."""
+        view = self.winfo_toplevel()
+        if hasattr(view, "cotes_view"):
+            return {fp: v for fp, v in view.cotes_view.get_all_cotes().items()
+                    if v is not None}
+        return {}
+
     def _on_generate_report(self):
         """Declenche la generation du rapport Excel en arriere-plan."""
         essais = self.get_ordered_essais()
@@ -855,6 +863,7 @@ class TraiterView(ctk.CTkFrame):
         sm = self.model.settings_manager
         rdm = self.model.raw_data_manager
         cleaning_map = self._get_cleaning_entries_map()
+        cotes_map = self._get_cotes_map()
 
         def _run():
             try:
@@ -872,6 +881,7 @@ class TraiterView(ctk.CTkFrame):
                     settings_manager=sm,
                     cleaning_entries=cleaning_map,
                     raw_data_manager=rdm,
+                    cotes=cotes_map,
                     progress_callback=progress_cb,
                 )
                 self.after(0, lambda: self._on_report_done(result))
