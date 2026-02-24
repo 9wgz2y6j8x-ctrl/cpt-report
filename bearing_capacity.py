@@ -10,12 +10,14 @@ Reproduit exactement les formules VBA de l'ancienne application :
   - Meyerhof
   - De Beer adapte (methode INISMa / Sanglerat)
 
-Toutes les fonctions internes travaillent en unites kgf/m²
-(equivalentes a DaN/m² avec la convention historique g = 10).
+Toutes les fonctions internes travaillent en DaN/m².
 La conversion finale en kgf/cm² est faite dans
 ``calculer_pressions_admissibles``.
 
-Convention historique : g = 10 m/s² pour la conversion kgf/DaN.
+Note : g = 9.81 m/s² (valeur physique reelle). La valeur de g
+s'annule dans la chaine de calcul complete (q et gamma sont
+proportionnels a g, et la conversion finale divise par g), donc
+le resultat en kgf/cm² est independant de g.
 """
 
 import math
@@ -23,8 +25,8 @@ from typing import Optional, Tuple
 
 PI = math.pi
 
-# Convention historique g = 10 (utilisee dans l'ancienne application VBA)
-_G = 10.0
+# Acceleration gravitationnelle [m/s²]
+_G = 9.81
 
 
 # ──────── Fonctions auxiliaires (methode De Beer / INISMa) ────────
@@ -88,8 +90,8 @@ def _pression_inisma(
     profondeur : profondeur [m]
     phip : angle de frottement effectif phi' [rad]
     phiu : angle de frottement brut phi_u [rad]
-    qp : contrainte au niveau de la fondation [kgf/m²]
-    q0p : contrainte naturelle effective [kgf/m²]
+    qp : contrainte au niveau de la fondation [DaN/m²]
+    q0p : contrainte naturelle effective [DaN/m²]
     b : largeur de semelle [m]
     rho_sec : masse volumique sol sec [kg/m³]
     rho_sat : masse volumique sol sature [kg/m³]
@@ -98,7 +100,7 @@ def _pression_inisma(
     Retours
     -------
     (pression, nq, vpg_val)
-        pression : pression brute [kgf/m²] (avant division par coeff securite)
+        pression : pression brute [DaN/m²] (avant division par coeff securite)
         nq : facteur Nq de De Beer [-]
         vpg_val : facteur Vpg [-]
     """
@@ -149,7 +151,7 @@ def _brinch_hansen(
     Parametres
     ----------
     phi : angle de frottement [rad] (phi_u)
-    q : contrainte naturelle effective [kgf/m²]
+    q : contrainte naturelle effective [DaN/m²]
     b : largeur de semelle [m]
     profondeur : profondeur [m]
     rho_sec : masse volumique sol sec [kg/m³]
@@ -158,7 +160,7 @@ def _brinch_hansen(
 
     Retours
     -------
-    float : pression brute [kgf/m²]
+    float : pression brute [DaN/m²]
     """
     nq = math.exp(PI * math.tan(phi)) * (math.tan(PI / 4 + phi / 2) ** 2)
     ng = 1.5 * (nq - 1.0) * math.tan(phi)
@@ -190,7 +192,7 @@ def _caquot_kerisel(
     Parametres
     ----------
     phi : angle de frottement [rad] (phi_u)
-    q : contrainte naturelle effective [kgf/m²]
+    q : contrainte naturelle effective [DaN/m²]
     b : largeur de semelle [m]
     profondeur : profondeur [m]
     rho_sec : masse volumique sol sec [kg/m³]
@@ -199,7 +201,7 @@ def _caquot_kerisel(
 
     Retours
     -------
-    float : pression brute [kgf/m²]
+    float : pression brute [DaN/m²]
     """
     kp = math.tan(PI / 4 + phi / 2) ** 2
     nq = math.exp(PI * math.tan(phi)) * (math.tan(PI / 4 + phi / 2) ** 2)
@@ -236,7 +238,7 @@ def _meyerhof(
     Parametres
     ----------
     phi : angle de frottement [rad] (phi_u)
-    q : contrainte naturelle effective [kgf/m²]
+    q : contrainte naturelle effective [DaN/m²]
     b : largeur de semelle [m]
     profondeur : profondeur [m]
     rho_sec : masse volumique sol sec [kg/m³]
@@ -245,7 +247,7 @@ def _meyerhof(
 
     Retours
     -------
-    float : pression brute [kgf/m²]
+    float : pression brute [DaN/m²]
     """
     nq = math.exp(PI * math.tan(phi)) * (math.tan(PI / 4 + phi / 2) ** 2)
     ng = (nq - 1.0) * math.tan(1.4 * phi)
@@ -261,9 +263,10 @@ def _meyerhof(
 
 # ──────── Interface haut-niveau ────────
 
-# Facteur de conversion DaN/m² (ou kgf/m²) -> kgf/cm²
-# Avec g=10 : (10 / (10000 * g)) = 10 / 100000 = 0.0001 = 1/10000
-_CONV_KGF_M2_TO_KGF_CM2 = 10.0 / (10000.0 * _G)
+# Facteur de conversion DaN/m² -> kgf/cm²
+# 1 DaN = 10 N, 1 kgf = g N, 1 m² = 10000 cm²
+# => 1 DaN/m² = (10/g) kgf/m² = (10/g)/10000 kgf/cm² = 10/(10000*g)
+_CONV_DAN_M2_TO_KGF_CM2 = 10.0 / (10000.0 * _G)
 
 
 def calculer_pressions_admissibles(
@@ -308,8 +311,9 @@ def calculer_pressions_admissibles(
     phiu = math.radians(phiu_deg)
     phip = math.radians(phip_deg)
 
-    # Convertir q'0 de kgf/cm² en kgf/m² pour les formules
-    q = q0_kgcm2 * 10000.0
+    # Convertir q'0 de kgf/cm² en DaN/m² pour les formules
+    # 1 kgf/cm² = (g/10) DaN/cm² = (g/10) * 10000 DaN/m² = 1000*g DaN/m²
+    q = q0_kgcm2 * 1000.0 * _G
     qp = q  # Pas de difference de niveau apres travaux
 
     if methode == "Brinch Hansen":
@@ -355,9 +359,9 @@ def calculer_pressions_admissibles(
             rho_sec, rho_sat, niveau_nappe,
         )
 
-    # Conversion kgf/m² -> kgf/cm² et application du coefficient de securite
-    padm1 = p1 / coeff_securite * _CONV_KGF_M2_TO_KGF_CM2
-    padm2 = p2 / coeff_securite * _CONV_KGF_M2_TO_KGF_CM2
+    # Conversion DaN/m² -> kgf/cm² et application du coefficient de securite
+    padm1 = p1 / coeff_securite * _CONV_DAN_M2_TO_KGF_CM2
+    padm2 = p2 / coeff_securite * _CONV_DAN_M2_TO_KGF_CM2
 
     # Fallback VBA : si padm1 < 0.1, prendre qc/10
     if padm1 < 0.1:
