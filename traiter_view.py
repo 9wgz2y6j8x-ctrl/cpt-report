@@ -843,6 +843,17 @@ class TraiterView(ctk.CTkFrame):
                     if v is not None}
         return {}
 
+    def _get_observations_map(self) -> Dict[str, dict]:
+        """Recupere le mapping {file_path: store_dict} depuis la vue Observations.
+
+        Chaque store_dict contient les niveaux d'eau et annotations saisis
+        par l'utilisateur.
+        """
+        view = self.winfo_toplevel()
+        if hasattr(view, "observations_view"):
+            return dict(view.observations_view._data_store)
+        return {}
+
     def _on_generate_report(self):
         """Declenche la generation du rapport Excel en arriere-plan."""
         essais = self.get_ordered_essais()
@@ -877,6 +888,7 @@ class TraiterView(ctk.CTkFrame):
         rdm = self.model.raw_data_manager
         cleaning_map = self._get_cleaning_entries_map()
         cotes_map = self._get_cotes_map()
+        observations_map = self._get_observations_map()
 
         def _run():
             try:
@@ -895,6 +907,7 @@ class TraiterView(ctk.CTkFrame):
                     cleaning_entries=cleaning_map,
                     raw_data_manager=rdm,
                     cotes=cotes_map,
+                    observations=observations_map,
                     progress_callback=progress_cb,
                 )
                 self.after(0, lambda: self._on_report_done(result))

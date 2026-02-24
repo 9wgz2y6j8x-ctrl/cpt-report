@@ -10,6 +10,7 @@ Colonnes remplies :
   - Prof.  : profondeur reechantillonnee
   - Cote   : cote de depart - profondeur
   - qc     : resistance a la pointe corrigee [kg/cm2]
+  - q'0    : contrainte naturelle effective [kg/cm2]
   - Qst    : frottement lateral total corrige [kg]
 
 Les colonnes qc et Qst necessitent la selection d'une machine dans la
@@ -199,6 +200,101 @@ def _resample_depths(
         selected[-1] = float(prof_arrondie)
 
     return np.array(selected)
+
+
+# ──────── Contrainte naturelle effective (q'0) ────────
+
+_RHO_EAU = 1000.0  # Masse volumique de l'eau [kg/m³]
+
+
+def _contrainte_effective_verticale(
+    profondeur: float,
+    rho_sec: float,
+    rho_sat: float,
+    niveau_nappe: Optional[float],
+) -> float:
+    """Calcule la contrainte effective verticale sigma'_v a une profondeur donnee.
+
+    Parametres
+    ----------
+    profondeur : float
+        Profondeur par rapport au terrain naturel [m]. Doit etre >= 0.
+    rho_sec : float
+        Masse volumique du sol au-dessus de la nappe [kg/m³].
+    rho_sat : float
+        Masse volumique du sol sature en-dessous de la nappe [kg/m³].
+    niveau_nappe : float | None
+        Profondeur de la nappe [m]. None = pas de nappe.
+
+    Retours
+    -------
+    float
+        Contrainte effective verticale [kgf/cm²].
+
+    Principe :
+      - Au-dessus de la nappe (ou sans nappe) : sigma'_v = z * rho_sec / 10 000
+      - En-dessous de la nappe :
+            sigma'_v = [z_nappe * rho_sec + (z - z_nappe) * (rho_sat - rho_eau)] / 10 000
+    """
+    if profondeur <= 0:
+        return 0.0
+
+    nappe_presente = niveau_nappe is not None and niveau_nappe >= 0
+    sous_la_nappe = nappe_presente and (profondeur >= niveau_nappe)
+
+    if sous_la_nappe:
+        z_nappe = niveau_nappe
+        pression_au_dessus = z_nappe * rho_sec
+        rho_dejauge = rho_sat - _RHO_EAU
+        pression_en_dessous = (profondeur - z_nappe) * rho_dejauge
+        return (pression_au_dessus + pression_en_dessous) / 10_000
+    else:
+        return (profondeur * rho_sec) / 10_000
+
+
+def _resolve_niveau_nappe(observations: Optional[dict]) -> Optional[float]:
+    """Determine le niveau de nappe a utiliser pour un essai.
+
+    Priorite : fin_chantier > fin_essai > None (sans nappe).
+
+    Parametres
+    ----------
+    observations : dict | None
+        Donnees du store d'observations pour un essai.
+        Structure attendue : {"hole_obs": {"Niveau d'eau": {"fin_essai": str, "fin_chantier": str}}, ...}
+
+    Retours
+    -------
+    float | None
+        Profondeur de la nappe [m], ou None si aucune donnee valide.
+    """
+    if not observations:
+        return None
+
+    hole_obs = observations.get("hole_obs", {})
+    niveau_eau = hole_obs.get("Niveau d'eau", {})
+
+    # Priorite 1 : fin de chantier
+    fin_chantier = niveau_eau.get("fin_chantier", "").strip()
+    if fin_chantier:
+        try:
+            val = float(fin_chantier.replace(",", "."))
+            if val >= 0:
+                return val
+        except (ValueError, TypeError):
+            pass
+
+    # Priorite 2 : fin d'essai
+    fin_essai = niveau_eau.get("fin_essai", "").strip()
+    if fin_essai:
+        try:
+            val = float(fin_essai.replace(",", "."))
+            if val >= 0:
+                return val
+        except (ValueError, TypeError):
+            pass
+
+    return None
 
 
 # ──────── Recuperation des donnees filtrables ────────
@@ -402,9 +498,7 @@ def _format_worksheet(ws) -> None:
         for cell in row:
             cell.font = _FONT_DATA
             if cell.value is not None:
-                if cell.column in (1, 2):
-                    cell.number_format = '0.00'
-                elif cell.column in (3, 5):
+                if cell.column in (1, 2, 3, 4, 5):
                     cell.number_format = '0.00'
 
 
@@ -416,6 +510,7 @@ def generate_excel_reports(
     cleaning_entries: Optional[Dict[str, Any]] = None,
     raw_data_manager=None,
     cotes: Optional[Dict[str, float]] = None,
+    observations: Optional[Dict[str, dict]] = None,
     progress_callback: Optional[Callable[[int, int, str], None]] = None,
 ) -> Dict[str, str]:
     """Genere les fichiers Excel de rapport, un par numero de dossier.
@@ -436,6 +531,9 @@ def generate_excel_reports(
     cotes : dict, optional
         Mapping {file_path: cote_de_depart} depuis la vue Cotes.
         Si absent ou si un essai n'a pas de cote, cote_de_depart = 0.
+    observations : dict, optional
+        Mapping {file_path: store_dict} depuis la vue Observations.
+        Chaque store_dict contient les niveaux d'eau (hole_obs) et annotations.
     progress_callback : callable, optional
         Fonction(current, total, message) pour le suivi de progression.
 
@@ -459,6 +557,10 @@ def generate_excel_reports(
 
     step_cm = settings_manager.get("rapport", "reechantillonnage_cm") or 20
     step_m = step_cm / 100.0
+
+    # Masses volumiques depuis les reglages
+    rho_sec = settings_manager.get("parametres_calcul", "masse_volumique_sol_sec") or 1800
+    rho_sat = settings_manager.get("parametres_calcul", "masse_volumique_sol_sature") or 2000
 
     # Grouper les essais par numero de dossier
     groups: Dict[str, List[Dict[str, Any]]] = {}
@@ -561,6 +663,16 @@ def generate_excel_reports(
             cote_depart = (cotes or {}).get(file_path, 0.0)
             for row_idx, depth_val in enumerate(resampled, start=3):
                 ws.cell(row=row_idx, column=2, value=round(cote_depart - depth_val, 2))
+
+            # ── Contrainte naturelle q'0 (colonne 4) ──
+            obs_store = (observations or {}).get(file_path)
+            niveau_nappe = _resolve_niveau_nappe(obs_store)
+
+            for row_idx, depth_val in enumerate(resampled, start=3):
+                q0 = _contrainte_effective_verticale(
+                    depth_val, rho_sec, rho_sat, niveau_nappe,
+                )
+                ws.cell(row=row_idx, column=4, value=round(q0, 2))
 
             # ── Correction qc et Qst ──
             correction_params = _build_correction_params(
