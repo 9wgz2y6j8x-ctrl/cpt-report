@@ -203,4 +203,15 @@ Private Function Meyerhof(phi As Double, c As Double, q As Double, b As Single, 
     End If
 End Function
 
+Public Function FPhipPhiu(phiu As Double, phip As Double) As Double
+'Intervient dans le cadre de la méthode de DE BEER
+    Dim terme1 As Double
+    Dim terme2 As Double
+    Dim terme3 As Double
 
+    terme1 = (1 + Sin(phip)) ^ (Tan(phiu) / Tan(phip))
+    terme2 = Exp((pi + phip - phiu) * Tan(phiu))
+    terme3 = (1 + Sin(phiu)) / (Sin(phiu) * Cos(phiu))
+    
+    FPhipPhiu = terme1 * terme2 * terme3
+End Function
