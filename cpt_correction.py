@@ -13,10 +13,7 @@ import numpy as np
 import pandas as pd
 from dataclasses import dataclass
 
-
-# ── Constante de conversion ──────────────────────────────────────────────────
-
-KGF_TO_DAN = 9.81 / 10.0  # 1 kgf = 9.81 N = 0.981 daN
+from units import KGF_TO_DAN
 
 
 # ── Parametres machine ───────────────────────────────────────────────────────

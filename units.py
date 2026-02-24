@@ -38,6 +38,10 @@ G_MS2 = 9.81  # acceleration gravitationnelle conventionnelle
 # Surface de pointe par defaut (10 cm2)
 DEFAULT_TIP_AREA_CM2 = 10.0
 
+# Facteur de conversion kgf -> daN (pre-calcule via Pint)
+# 1 kgf = 9.81 N = 0.981 daN
+KGF_TO_DAN = float(Q_(1, "kgf").to("daN").magnitude)
+
 
 def make_tip_area(tip_area_cm2: float = DEFAULT_TIP_AREA_CM2) -> pint.Quantity:
     """Construit la Quantity Pint pour la surface de pointe."""
