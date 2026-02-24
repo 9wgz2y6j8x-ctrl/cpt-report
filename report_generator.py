@@ -265,11 +265,11 @@ def _format_worksheet(ws) -> None:
         cell.fill = _FILL_HEADER
         cell.border = _BORDER_BOTTOM
 
-    # Lignes de donnees : Courier New 11 + format 0,00 pour la colonne 1
+    # Lignes de donnees : Courier New 11 + format 0,00 pour les colonnes 1 et 2
     for row in ws.iter_rows(min_row=3, max_col=_NUM_COLS):
         for cell in row:
             cell.font = _FONT_DATA
-            if cell.column == 1 and cell.value is not None:
+            if cell.column in (1, 2) and cell.value is not None:
                 cell.number_format = '0.00'
 
 
@@ -280,6 +280,7 @@ def generate_excel_reports(
     settings_manager,
     cleaning_entries: Optional[Dict[str, Any]] = None,
     raw_data_manager=None,
+    cotes: Optional[Dict[str, float]] = None,
     progress_callback: Optional[Callable[[int, int, str], None]] = None,
 ) -> Dict[str, str]:
     """Genere les fichiers Excel de rapport, un par numero de dossier.
@@ -297,6 +298,9 @@ def generate_excel_reports(
         aux donnees filtrees.
     raw_data_manager : RawDataManager, optional
         Gestionnaire des donnees brutes (pour acceder aux file_data complets).
+    cotes : dict, optional
+        Mapping {file_path: cote_de_depart} depuis la vue Cotes.
+        Si absent ou si un essai n'a pas de cote, cote_de_depart = 0.
     progress_callback : callable, optional
         Fonction(current, total, message) pour le suivi de progression.
 
@@ -417,6 +421,11 @@ def generate_excel_reports(
             # Ecrire la colonne Profondeur (colonne 1, a partir de la ligne 3)
             for row_idx, depth_val in enumerate(resampled, start=3):
                 ws.cell(row=row_idx, column=1, value=round(depth_val, 2))
+
+            # Ecrire la colonne Cote (colonne 2) : cote = prof + cote_de_depart
+            cote_depart = (cotes or {}).get(file_path, 0.0)
+            for row_idx, depth_val in enumerate(resampled, start=3):
+                ws.cell(row=row_idx, column=2, value=round(depth_val + cote_depart, 2))
 
             # ── Formatage de la feuille ──
             _format_worksheet(ws)
