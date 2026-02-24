@@ -12,9 +12,12 @@ Colonnes remplies :
   - qc     : resistance a la pointe corrigee [kg/cm2]
   - q'0    : contrainte naturelle effective [kg/cm2]
   - Qst    : frottement lateral total corrige [kg]
+  - phi'   : angle de frottement effectif [deg] (min 30 deg)
+  - phi_u  : angle de frottement brut [deg]
 
 Les colonnes qc et Qst necessitent la selection d'une machine dans la
-vue Calculer ; sans machine, elles restent vides.
+vue Calculer ; sans machine, elles restent vides (ainsi que phi' et phi_u
+qui dependent de qc).
 """
 
 import os
@@ -38,6 +41,7 @@ from cpt_correction import (
     _compter_tiges,
 )
 from units import qc_to_internal, qst_to_internal, internal_to_plot
+from friction_angle import calculer_angles_frottement
 
 logger = logging.getLogger(__name__)
 
@@ -498,7 +502,7 @@ def _format_worksheet(ws) -> None:
         for cell in row:
             cell.font = _FONT_DATA
             if cell.value is not None:
-                if cell.column in (1, 2, 3, 4, 5):
+                if cell.column in (1, 2, 3, 4, 5, 6, 7):
                     cell.number_format = '0.00'
 
 
@@ -668,11 +672,13 @@ def generate_excel_reports(
             obs_store = (observations or {}).get(file_path)
             niveau_nappe = _resolve_niveau_nappe(obs_store)
 
+            q0_values = []
             for row_idx, depth_val in enumerate(resampled, start=3):
                 q0 = _contrainte_effective_verticale(
                     depth_val, rho_sec, rho_sat, niveau_nappe,
                 )
                 ws.cell(row=row_idx, column=4, value=round(q0, 2))
+                q0_values.append(q0)
 
             # ── Correction qc et Qst ──
             correction_params = _build_correction_params(
@@ -703,14 +709,23 @@ def generate_excel_reports(
                     # valeur corrigee la plus proche
                     for row_idx, depth_val in enumerate(resampled, start=3):
                         idx = int(np.argmin(np.abs(corr_depths - depth_val)))
+                        qc_val = float(qc_out[idx])
                         ws.cell(
                             row=row_idx, column=3,
-                            value=round(float(qc_out[idx]), 2),
+                            value=round(qc_val, 2),
                         )
                         ws.cell(
                             row=row_idx, column=5,
                             value=round(float(qst_out[idx]), 2),
                         )
+
+                        # ── Angles de frottement phi' (col 6) et phi_u (col 7) ──
+                        q0_val = q0_values[row_idx - 3]
+                        phi_prime, phi_u = calculer_angles_frottement(qc_val, q0_val)
+                        if phi_prime is not None:
+                            ws.cell(row=row_idx, column=6, value=round(phi_prime, 2))
+                        if phi_u is not None:
+                            ws.cell(row=row_idx, column=7, value=round(phi_u, 2))
             else:
                 machine_name = essai.get("machine", "").strip()
                 if not machine_name:
