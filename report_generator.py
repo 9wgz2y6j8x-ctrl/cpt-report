@@ -8,7 +8,7 @@ Chaque feuille contient les colonnes de calcul (titres + unites + donnees).
 
 Colonnes remplies :
   - Prof.  : profondeur reechantillonnee
-  - Cote   : profondeur + cote de depart
+  - Cote   : cote de depart - profondeur
   - qc     : resistance a la pointe corrigee [kg/cm2]
   - Qst    : frottement lateral total corrige [kg]
 
@@ -557,10 +557,10 @@ def generate_excel_reports(
             for row_idx, depth_val in enumerate(resampled, start=3):
                 ws.cell(row=row_idx, column=1, value=round(depth_val, 2))
 
-            # Ecrire la colonne Cote (colonne 2) : cote = prof + cote_de_depart
+            # Ecrire la colonne Cote (colonne 2) : cote = cote_de_depart - prof
             cote_depart = (cotes or {}).get(file_path, 0.0)
             for row_idx, depth_val in enumerate(resampled, start=3):
-                ws.cell(row=row_idx, column=2, value=round(depth_val + cote_depart, 2))
+                ws.cell(row=row_idx, column=2, value=round(cote_depart - depth_val, 2))
 
             # ── Correction qc et Qst ──
             correction_params = _build_correction_params(
