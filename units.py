@@ -9,7 +9,7 @@ Conventions :
 - Interne : DaN/m2 (qc) et DaN (Qst)
 - Sortie graphique : (MPa, kN) ou (kg/cm2, kg)
 
-g = 9.81 m/s2 (convention geotechnique).
+g = 10 m/s2 (convention historique geotechnique : 1 kgf = 1 daN).
 Surface de pointe (TIP_AREA) : par defaut 10 cm2, configurable.
 """
 
@@ -24,8 +24,12 @@ ureg = pint.UnitRegistry()
 # Definir daN (decanewton) = 10 N
 ureg.define("daN = 10 * newton")
 
-# Definir kgf (kilogramme-force) base sur g = 9.81
-ureg.define("kgf = 9.81 * newton")
+# Definir kgf (kilogramme-force) base sur g = 10 m/s2
+# Convention historique geotechnique : 1 kgf = 1 daN = 10 N
+# Cela donne les facteurs de conversion historiques :
+#   MPa -> kg (avec pointe 10 cm2) : x 100
+#   kN  -> kg                       : x 100
+ureg.define("kgf = 10 * newton")
 
 # Raccourcis de Quantity
 Q_ = ureg.Quantity
@@ -33,7 +37,7 @@ Q_ = ureg.Quantity
 
 # ──────────────────────── Constantes ────────────────────────
 
-G_MS2 = 9.81  # acceleration gravitationnelle conventionnelle
+G_MS2 = 10.0  # acceleration gravitationnelle conventionnelle (1 kgf = 1 daN)
 
 # Surface de pointe par defaut (10 cm2)
 DEFAULT_TIP_AREA_CM2 = 10.0
