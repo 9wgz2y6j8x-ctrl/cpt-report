@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 # ── Constante de conversion ──────────────────────────────────────────────────
 
-KGF_TO_DAN = 9.81 / 10.0  # 1 kgf = 9.81 N = 0.981 daN
+KGF_TO_DAN = 1.0  # Convention historique : 1 kgf = 1 daN (g = 10 m/s2)
 
 
 # ── Parametres machine ───────────────────────────────────────────────────────
