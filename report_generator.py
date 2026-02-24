@@ -5,8 +5,15 @@ Module de generation de rapports Excel pour les essais CPT.
 
 Produit un fichier Excel par numero de dossier, avec une feuille par essai.
 Chaque feuille contient les colonnes de calcul (titres + unites + donnees).
-Pour cette iteration, seule la colonne Profondeur est remplie ; les autres
-colonnes sont presentes (en-tetes + unites) mais laissees vides.
+
+Colonnes remplies :
+  - Prof.  : profondeur reechantillonnee
+  - Cote   : profondeur + cote de depart
+  - qc     : resistance a la pointe corrigee [kg/cm2]
+  - Qst    : frottement lateral total corrige [kg]
+
+Les colonnes qc et Qst necessitent la selection d'une machine dans la
+vue Calculer ; sans machine, elles restent vides.
 """
 
 import os
@@ -23,6 +30,13 @@ from openpyxl.utils import get_column_letter
 
 from tabular_reader import load_cpt_dataframe
 from cpt_plot import CPTPlotConfig, _resolve_column_name
+from cpt_correction import (
+    ParamsAppareilCPT,
+    calculer_qc_corrige,
+    calculer_qst_corrige,
+    _compter_tiges,
+)
+from units import qc_to_internal, qst_to_internal, internal_to_plot
 
 logger = logging.getLogger(__name__)
 
@@ -230,6 +244,124 @@ def _get_dataframe_for_essai(
         return None
 
 
+# ──────── Construction des parametres de correction ────────
+
+def _build_correction_params(
+    essai: Dict[str, Any],
+    settings_manager,
+    raw_data_manager=None,
+) -> Optional[ParamsAppareilCPT]:
+    """Construit les ParamsAppareilCPT depuis l'essai et la config machine.
+
+    Retourne None si la machine n'est pas selectionnee ou introuvable.
+    """
+    machine_name = essai.get("machine", "").strip()
+    if not machine_name:
+        return None
+
+    machines = settings_manager.get_machines()
+    machine_cfg = next(
+        (m for m in machines if m.get("nom") == machine_name), None
+    )
+    if machine_cfg is None:
+        logger.warning(
+            "Machine '%s' introuvable dans la configuration.", machine_name
+        )
+        return None
+
+    section = essai.get("section", "Grande")
+    if section == "Petite":
+        poids_tige_kg = machine_cfg.get("poids_tige_petite_section", 0.0)
+        poids_tube_kg = machine_cfg.get("poids_tube_petite_section", 0.0)
+    else:
+        poids_tige_kg = machine_cfg.get("poids_tige_grande_section", 0.0)
+        poids_tube_kg = machine_cfg.get("poids_tube_grande_section", 0.0)
+
+    tip_area_cm2 = settings_manager.get("unites", "tip_area_cm2") or 10.0
+    section_pointe_m2 = tip_area_cm2 * 1e-4  # cm2 -> m2
+
+    return ParamsAppareilCPT(
+        section_pointe_m2=section_pointe_m2,
+        poids_tige_kg=poids_tige_kg,
+        poids_tube_kg=poids_tube_kg,
+        delta_petit_mano_kg=essai.get("delta_petit", 0),
+        delta_grand_mano_kg=essai.get("delta_grand", 0),
+        nb_tubes_avant_sol=machine_cfg.get("nb_tubes_avant_sol", 0),
+    )
+
+
+def _compute_corrections(
+    df: pd.DataFrame,
+    col_depth: str,
+    params: ParamsAppareilCPT,
+    unit_qc: str,
+    unit_qst: str,
+    tip_area_cm2: float,
+) -> Optional[Dict[str, np.ndarray]]:
+    """Calcule qc corrige et Qst corrige pour un DataFrame d'essai.
+
+    Retourne un dict avec les cles :
+        'depths'   : profondeurs valides triees
+        'qc_out'   : qc corrige en kg/cm2
+        'qst_out'  : Qst corrige en kg
+
+    Retourne None en cas d'erreur.
+    """
+    cfg = CPTPlotConfig()
+    try:
+        col_qc = _resolve_column_name(df, cfg.col_qc, "col_qc")
+        col_qst = _resolve_column_name(df, cfg.col_qst, "col_qst")
+    except Exception as exc:
+        logger.warning("Colonnes qc/Qst introuvables : %s", exc)
+        return None
+
+    # Extraire les donnees valides (profondeur non NaN)
+    mask = df[col_depth].notna()
+    df_valid = df.loc[mask].copy()
+    df_valid = df_valid.sort_values(by=col_depth).reset_index(drop=True)
+
+    if df_valid.empty:
+        return None
+
+    valid_depths = df_valid[col_depth].values.astype(float)
+    valid_qc = df_valid[col_qc].fillna(0).values.astype(float)
+    valid_qst = df_valid[col_qst].fillna(0).values.astype(float)
+
+    # Convertir en unites internes (DaN/m2 et DaN)
+    qc_internal = qc_to_internal(valid_qc, unit_qc, tip_area_cm2)
+    qst_internal = qst_to_internal(valid_qst, unit_qst)
+
+    # Compter les tiges par profondeur
+    depth_series = pd.Series(valid_depths)
+    qc_series = pd.Series(qc_internal)
+    qst_series = pd.Series(qst_internal)
+
+    n_tiges = _compter_tiges(depth_series, params.nb_tubes_avant_sol)
+
+    # Calculer qc corrige
+    qc_corrige = calculer_qc_corrige(qc_series, n_tiges, params)
+
+    # Reconstruire rtotale pour le calcul de Qst
+    rtotale_danm2 = qc_series + qst_series / params.section_pointe_m2
+
+    # Calculer Qst corrige
+    qst_corrige = calculer_qst_corrige(
+        rtotale_danm2, qc_corrige, n_tiges, params
+    )
+
+    # Convertir en unites de sortie (kg/cm2 et kgf)
+    qc_out, qst_out, _, _ = internal_to_plot(
+        qc_corrige.values, qst_corrige.values,
+        pair="kg_kg", tip_area_cm2=tip_area_cm2,
+    )
+
+    return {
+        "depths": valid_depths,
+        "qc_out": qc_out,
+        "qst_out": qst_out,
+    }
+
+
 # ──────── Styles Excel ────────
 
 _FONT_HEADER = Font(name="Arial", size=12, bold=True)
@@ -265,12 +397,15 @@ def _format_worksheet(ws) -> None:
         cell.fill = _FILL_HEADER
         cell.border = _BORDER_BOTTOM
 
-    # Lignes de donnees : Courier New 11 + format 0,00 pour les colonnes 1 et 2
+    # Lignes de donnees : Courier New 11 + format numerique
     for row in ws.iter_rows(min_row=3, max_col=_NUM_COLS):
         for cell in row:
             cell.font = _FONT_DATA
-            if cell.column in (1, 2) and cell.value is not None:
-                cell.number_format = '0.00'
+            if cell.value is not None:
+                if cell.column in (1, 2):
+                    cell.number_format = '0.00'
+                elif cell.column in (3, 5):
+                    cell.number_format = '0.00'
 
 
 # ──────── Generation Excel ────────
@@ -426,6 +561,52 @@ def generate_excel_reports(
             cote_depart = (cotes or {}).get(file_path, 0.0)
             for row_idx, depth_val in enumerate(resampled, start=3):
                 ws.cell(row=row_idx, column=2, value=round(depth_val + cote_depart, 2))
+
+            # ── Correction qc et Qst ──
+            correction_params = _build_correction_params(
+                essai, settings_manager, raw_data_manager,
+            )
+
+            if correction_params is not None:
+                tip_area_cm2 = (
+                    settings_manager.get("unites", "tip_area_cm2") or 10.0
+                )
+                unit_qc = "MPa"
+                unit_qst = "kN"
+                if raw_data_manager:
+                    unit_qc = raw_data_manager.get_unit(file_path, "unit_qc")
+                    unit_qst = raw_data_manager.get_unit(file_path, "unit_qst")
+
+                corrections = _compute_corrections(
+                    df, col_depth, correction_params,
+                    unit_qc, unit_qst, tip_area_cm2,
+                )
+
+                if corrections is not None:
+                    corr_depths = corrections["depths"]
+                    qc_out = corrections["qc_out"]
+                    qst_out = corrections["qst_out"]
+
+                    # Pour chaque profondeur reechantillonnee, trouver la
+                    # valeur corrigee la plus proche
+                    for row_idx, depth_val in enumerate(resampled, start=3):
+                        idx = int(np.argmin(np.abs(corr_depths - depth_val)))
+                        ws.cell(
+                            row=row_idx, column=3,
+                            value=round(float(qc_out[idx]), 2),
+                        )
+                        ws.cell(
+                            row=row_idx, column=5,
+                            value=round(float(qst_out[idx]), 2),
+                        )
+            else:
+                machine_name = essai.get("machine", "").strip()
+                if not machine_name:
+                    logger.info(
+                        "Aucune machine selectionnee pour %s, colonnes qc/Qst "
+                        "laissees vides.",
+                        file_path,
+                    )
 
             # ── Formatage de la feuille ──
             _format_worksheet(ws)

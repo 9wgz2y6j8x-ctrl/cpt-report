@@ -853,6 +853,19 @@ class TraiterView(ctk.CTkFrame):
             )
             return
 
+        # Verifier les essais sans machine selectionnee
+        sans_machine = [e for e in essais if not e.get("machine", "").strip()]
+        if sans_machine:
+            noms = ", ".join(
+                e.get("test", "?") or "?" for e in sans_machine[:3]
+            )
+            suffix = f" (+{len(sans_machine) - 3})" if len(sans_machine) > 3 else ""
+            self._report_status.configure(
+                text=f"Machine non selectionnee pour : {noms}{suffix}. "
+                     f"Colonnes qc/Qst seront vides.",
+                text_color="#CC6600",
+            )
+
         # Desactiver le bouton pendant la generation
         self._btn_report.configure(state="disabled")
         self._report_status.configure(
