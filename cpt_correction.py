@@ -55,16 +55,14 @@ def _selectionner_delta_mano_dan(
 def _compter_tiges(profondeur: pd.Series, nb_tubes_avant_sol: int) -> pd.Series:
     """Compte le nombre de tiges a chaque profondeur.
 
-    Chaque tige fait 1 metre. A une profondeur d :
-        n_tiges = nb_tubes_avant_sol + ceil(d)  pour d > 0
-        n_tiges = nb_tubes_avant_sol             pour d = 0
+    Chaque tige fait 1 metre. On ajoute une tige lorsque la precedente
+    est enfoncee a moitie environ, d'ou l'arrondi au plus proche
+    (convention identique au VBA historique) :
+
+        n_tiges = nb_tubes_avant_sol + round(d)
     """
     depths = profondeur.to_numpy().astype(float)
-    n = np.where(
-        depths > 0,
-        nb_tubes_avant_sol + np.ceil(depths).astype(int),
-        nb_tubes_avant_sol,
-    )
+    n = nb_tubes_avant_sol + np.round(depths).astype(int)
     return pd.Series(n, index=profondeur.index, name="n_tiges")
 
 
