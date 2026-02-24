@@ -14,10 +14,12 @@ Colonnes remplies :
   - Qst    : frottement lateral total corrige [kg]
   - phi'   : angle de frottement effectif [deg] (min 30 deg)
   - phi_u  : angle de frottement brut [deg]
+  - Padm,1 : pression admissible sous semelle 1 [kg/cm2]
+  - Padm,2 : pression admissible sous semelle 2 [kg/cm2]
 
 Les colonnes qc et Qst necessitent la selection d'une machine dans la
-vue Calculer ; sans machine, elles restent vides (ainsi que phi' et phi_u
-qui dependent de qc).
+vue Calculer ; sans machine, elles restent vides (ainsi que phi', phi_u,
+Padm1 et Padm2 qui dependent de qc).
 """
 
 import os
@@ -42,6 +44,7 @@ from cpt_correction import (
 )
 from units import qc_to_internal, qst_to_internal, internal_to_plot
 from friction_angle import calculer_angles_frottement
+from bearing_capacity import calculer_pressions_admissibles
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +74,9 @@ REPORT_UNITS_TEMPLATE = [
     "[kg]",
     "[\u00b0]",         # [°]
     "[\u00b0]",         # [°]
-    "[kg/cm\u00b2]",   # [kg/cm²]
-    "[kg/cm\u00b2]",   # [kg/cm²]
-    "[/] \u03b1={alpha}",  # [/] α=<valeur>  — sera formatte
+    "[kg/cm\u00b2] B={b1}",   # [kg/cm²] B=<largeur1>  — sera formatte
+    "[kg/cm\u00b2] B={b2}",   # [kg/cm²] B=<largeur2>  — sera formatte
+    "[/] \u03b1={alpha}",      # [/] α=<valeur>  — sera formatte
     "[/]",
     "[/]",
 ]
@@ -502,7 +505,7 @@ def _format_worksheet(ws) -> None:
         for cell in row:
             cell.font = _FONT_DATA
             if cell.value is not None:
-                if cell.column in (1, 2, 3, 4, 5, 6, 7):
+                if cell.column in (1, 2, 3, 4, 5, 6, 7, 8, 9):
                     cell.number_format = '0.00'
 
 
@@ -566,6 +569,20 @@ def generate_excel_reports(
     rho_sec = settings_manager.get("parametres_calcul", "masse_volumique_sol_sec") or 1800
     rho_sat = settings_manager.get("parametres_calcul", "masse_volumique_sol_sature") or 2000
 
+    # Parametres de calcul de portance
+    methode_portance = (
+        settings_manager.get("parametres_calcul", "methode_calcul_portance")
+        or "De Beer (adapté)"
+    )
+    largeur_semelle_1 = (
+        settings_manager.get("parametres_calcul", "largeur_semelle_fondation_1")
+        or 0.6
+    )
+    largeur_semelle_2 = (
+        settings_manager.get("parametres_calcul", "largeur_semelle_fondation_2")
+        or 1.5
+    )
+
     # Grouper les essais par numero de dossier
     groups: Dict[str, List[Dict[str, Any]]] = {}
     for essai in essais:
@@ -615,9 +632,14 @@ def generate_excel_reports(
             alpha_val = essai.get("alpha", 1.5)
             # Formater alpha : "1.5" -> "1,5" (notation francaise)
             alpha_str = f"{alpha_val:.1f}".replace(".", ",") if alpha_val != int(alpha_val) else str(int(alpha_val))
+            # Formater les largeurs de semelles en cm pour l'affichage
+            b1_cm = int(round(largeur_semelle_1 * 100))
+            b2_cm = int(round(largeur_semelle_2 * 100))
 
             for col_idx, unit_template in enumerate(REPORT_UNITS_TEMPLATE, start=1):
-                unit = unit_template.format(alpha=alpha_str)
+                unit = unit_template.format(
+                    alpha=alpha_str, b1=f"{b1_cm}cm", b2=f"{b2_cm}cm",
+                )
                 ws.cell(row=2, column=col_idx, value=unit)
 
             # Charger les donnees
@@ -726,6 +748,25 @@ def generate_excel_reports(
                             ws.cell(row=row_idx, column=6, value=round(phi_prime, 2))
                         if phi_u is not None:
                             ws.cell(row=row_idx, column=7, value=round(phi_u, 2))
+
+                        # ── Pressions admissibles Padm1 (col 8) et Padm2 (col 9) ──
+                        if phi_prime is not None and phi_u is not None and q0_val > 0:
+                            padm1, padm2 = calculer_pressions_admissibles(
+                                methode=methode_portance,
+                                profondeur=depth_val,
+                                q0_kgcm2=q0_val,
+                                phip_deg=phi_prime,
+                                phiu_deg=phi_u,
+                                largeur_semelle_1_m=largeur_semelle_1,
+                                largeur_semelle_2_m=largeur_semelle_2,
+                                coeff_securite=alpha_val,
+                                rho_sec=rho_sec,
+                                rho_sat=rho_sat,
+                                niveau_nappe=niveau_nappe,
+                                qc_kgcm2=qc_val,
+                            )
+                            ws.cell(row=row_idx, column=8, value=round(padm1, 2))
+                            ws.cell(row=row_idx, column=9, value=round(padm2, 2))
             else:
                 machine_name = essai.get("machine", "").strip()
                 if not machine_name:
