@@ -16,6 +16,7 @@ Colonnes remplies :
   - phi_u  : angle de frottement brut [deg]
   - Padm,1 : pression admissible sous semelle 1 [kg/cm2]
   - Padm,2 : pression admissible sous semelle 2 [kg/cm2]
+  - C      : coefficient de compressibilite [-] (alpha * qc / q'0)
   - Nq     : facteur de portance Nq (propre a la methode choisie)
   - Ng     : facteur de portance Ngamma (Vpg pour De Beer / INISMa)
 
@@ -507,7 +508,7 @@ def _format_worksheet(ws) -> None:
         for cell in row:
             cell.font = _FONT_DATA
             if cell.value is not None:
-                if cell.column in (1, 2, 3, 4, 5, 6, 7, 8, 9):
+                if cell.column in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10):
                     cell.number_format = '0.00'
 
 
@@ -635,11 +636,12 @@ def generate_excel_reports(
                 ws.cell(row=1, column=col_idx, value=col_title)
 
             # Ecrire les unites (ligne 2)
-            # Formater le coefficient de securite : "2.0" -> "2", "1.5" -> "1,5" (notation francaise)
-            coeff_sec_str = (
-                f"{coeff_securite:.1f}".replace(".", ",")
-                if coeff_securite != int(coeff_securite)
-                else str(int(coeff_securite))
+            # Formater alpha (compressibilite) : "1.5" -> "1,5", "2.0" -> "2" (notation francaise)
+            alpha_essai = essai.get("alpha", 1.5)
+            alpha_str = (
+                f"{alpha_essai:.1f}".replace(".", ",")
+                if alpha_essai != int(alpha_essai)
+                else str(int(alpha_essai))
             )
             # Formater les largeurs de semelles en cm pour l'affichage
             b1_cm = int(round(largeur_semelle_1 * 100))
@@ -647,7 +649,7 @@ def generate_excel_reports(
 
             for col_idx, unit_template in enumerate(REPORT_UNITS_TEMPLATE, start=1):
                 unit = unit_template.format(
-                    alpha=coeff_sec_str, b1=f"{b1_cm}cm", b2=f"{b2_cm}cm",
+                    alpha=alpha_str, b1=f"{b1_cm}cm", b2=f"{b2_cm}cm",
                 )
                 ws.cell(row=2, column=col_idx, value=unit)
 
@@ -757,6 +759,13 @@ def generate_excel_reports(
                             ws.cell(row=row_idx, column=6, value=round(phi_prime, 2))
                         if phi_u is not None:
                             ws.cell(row=row_idx, column=7, value=round(phi_u, 2))
+
+                        # ── Coefficient de compressibilite C (col 10) ──
+                        # C = alpha * vbd, ou vbd = qc / q'0
+                        if q0_val > 0:
+                            vbd = qc_val / q0_val
+                            coeff_c = alpha_essai * vbd
+                            ws.cell(row=row_idx, column=10, value=round(coeff_c, 2))
 
                         # ── Pressions admissibles Padm1 (col 8) et Padm2 (col 9) ──
                         if phi_prime is not None and phi_u is not None and q0_val > 0:
