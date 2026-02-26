@@ -582,6 +582,10 @@ def generate_excel_reports(
         settings_manager.get("parametres_calcul", "largeur_semelle_fondation_2")
         or 1.5
     )
+    coeff_securite = (
+        settings_manager.get("parametres_calcul", "coefficient_securite")
+        or 2
+    )
 
     # Grouper les essais par numero de dossier
     groups: Dict[str, List[Dict[str, Any]]] = {}
@@ -629,16 +633,19 @@ def generate_excel_reports(
                 ws.cell(row=1, column=col_idx, value=col_title)
 
             # Ecrire les unites (ligne 2)
-            alpha_val = essai.get("alpha", 1.5)
-            # Formater alpha : "1.5" -> "1,5" (notation francaise)
-            alpha_str = f"{alpha_val:.1f}".replace(".", ",") if alpha_val != int(alpha_val) else str(int(alpha_val))
+            # Formater le coefficient de securite : "2.0" -> "2", "1.5" -> "1,5" (notation francaise)
+            coeff_sec_str = (
+                f"{coeff_securite:.1f}".replace(".", ",")
+                if coeff_securite != int(coeff_securite)
+                else str(int(coeff_securite))
+            )
             # Formater les largeurs de semelles en cm pour l'affichage
             b1_cm = int(round(largeur_semelle_1 * 100))
             b2_cm = int(round(largeur_semelle_2 * 100))
 
             for col_idx, unit_template in enumerate(REPORT_UNITS_TEMPLATE, start=1):
                 unit = unit_template.format(
-                    alpha=alpha_str, b1=f"{b1_cm}cm", b2=f"{b2_cm}cm",
+                    alpha=coeff_sec_str, b1=f"{b1_cm}cm", b2=f"{b2_cm}cm",
                 )
                 ws.cell(row=2, column=col_idx, value=unit)
 
@@ -759,7 +766,7 @@ def generate_excel_reports(
                                 phiu_deg=phi_u,
                                 largeur_semelle_1_m=largeur_semelle_1,
                                 largeur_semelle_2_m=largeur_semelle_2,
-                                coeff_securite=alpha_val,
+                                coeff_securite=coeff_securite,
                                 rho_sec=rho_sec,
                                 rho_sat=rho_sat,
                                 niveau_nappe=niveau_nappe,

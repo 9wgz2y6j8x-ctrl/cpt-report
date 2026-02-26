@@ -1063,6 +1063,22 @@ class SettingsView(ctk.CTkFrame):
             setting_key="largeur_semelle_fondation_2",
         )
 
+        # --- Coefficient de sécurité ---
+        self._build_numeric_param_card(
+            title="Coefficient de sécurité",
+            description=(
+                "Coefficient de sécurité utilisé pour le calcul des pressions "
+                "admissibles. Valeur comprise entre 1 et 4."
+            ),
+            unit="",
+            default_value=2,
+            current_value=data.get("coefficient_securite", 2),
+            setting_key="coefficient_securite",
+            warning_text="Attention : la modification du coefficient de sécurité affecte directement les pressions admissibles calculées.",
+            min_value=1,
+            max_value=4,
+        )
+
     def _make_setter_str(self, section: str, key: str):
         """Setter qui ne convertit pas en int (pour les ComboBox texte)."""
         def _set(value):
@@ -1072,7 +1088,9 @@ class SettingsView(ctk.CTkFrame):
 
     def _build_numeric_param_card(self, title: str, description: str,
                                    unit: str, default_value, current_value,
-                                   setting_key: str, warning_text: str = ""):
+                                   setting_key: str, warning_text: str = "",
+                                   min_value: float = None,
+                                   max_value: float = None):
         """Construit une carte de paramètre numérique avec bouton de réinitialisation."""
         card = _SettingCard(self._inner)
 
@@ -1143,6 +1161,14 @@ class SettingsView(ctk.CTkFrame):
             try:
                 val = float(raw)
             except ValueError:
+                return
+            if min_value is not None and val < min_value:
+                val = min_value
+                var.set(str(val))
+                return
+            if max_value is not None and val > max_value:
+                val = max_value
+                var.set(str(val))
                 return
             self._sm.set("parametres_calcul", setting_key, val)
             self._notify_change()
