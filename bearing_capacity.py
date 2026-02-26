@@ -261,6 +261,95 @@ def _meyerhof(
     return q * nq + gamma * b * ng
 
 
+# ──────── Fonctions Nq / Ng dediees ────────
+
+
+def calculer_nq(
+    methode: str,
+    phiu_deg: float,
+    phip_deg: float = 0.0,
+    q0_kgcm2: float = 0.0,
+) -> float:
+    """Retourne le facteur Nq correspondant a la *methode* choisie.
+
+    Pour les methodes Brinch Hansen, Caquot-Kerisel et Meyerhof la
+    formule classique Nq(phi_u) est utilisee.
+    Pour la methode De Beer (INISMa) le Nq specifique a cette methode
+    est calcule (depend aussi de phi' et de q'0).
+
+    Parametres
+    ----------
+    methode : nom de la methode
+        "De Beer (adapté)", "Brinch Hansen", "Caquot Kérisel", "Meyerhof"
+    phiu_deg : angle de frottement brut [deg]
+    phip_deg : angle de frottement effectif [deg] (INISMa uniquement)
+    q0_kgcm2 : contrainte naturelle effective [kgf/cm²] (INISMa uniquement)
+    """
+    phiu = math.radians(phiu_deg)
+
+    if phiu < 0.001:
+        return 0.0
+
+    if methode in ("Brinch Hansen", "Caquot Kérisel", "Meyerhof"):
+        return math.exp(PI * math.tan(phiu)) * (math.tan(PI / 4 + phiu / 2) ** 2)
+
+    # De Beer (adapté) / INISMa
+    phip = math.radians(phip_deg)
+    if phip < 0.001:
+        return 0.0
+
+    q = q0_kgcm2 * 1000.0 * _G
+    qp = q  # meme convention que calculer_pressions_admissibles
+    q0p = q
+
+    terme1 = _f_phip_phiu(phiu, phip)
+    nq_val = (
+        terme1 * math.tan(phip)
+        * ((qp / q0p) ** (math.tan(phiu) / math.tan(phip)))
+        - math.tan(phip) / math.tan(phiu)
+        + 1.0
+    )
+    return nq_val
+
+
+def calculer_ng(methode: str, phiu_deg: float) -> float:
+    """Retourne le facteur Ng (gamma) correspondant a la *methode* choisie.
+
+    Pour les methodes Brinch Hansen, Caquot-Kerisel et Meyerhof la
+    formule propre a chaque methode est utilisee.
+    Pour la methode De Beer (INISMa) le facteur Vpg est retourne.
+
+    Parametres
+    ----------
+    methode : nom de la methode
+        "De Beer (adapté)", "Brinch Hansen", "Caquot Kérisel", "Meyerhof"
+    phiu_deg : angle de frottement brut [deg]
+    """
+    phiu = math.radians(phiu_deg)
+
+    if phiu < 0.001:
+        return 0.0
+
+    if methode == "Brinch Hansen":
+        nq = math.exp(PI * math.tan(phiu)) * (math.tan(PI / 4 + phiu / 2) ** 2)
+        return 1.5 * (nq - 1.0) * math.tan(phiu)
+
+    if methode == "Caquot Kérisel":
+        kp = math.tan(PI / 4 + phiu / 2) ** 2
+        return (
+            math.cos(PI / 4 - phiu / 2)
+            / (2.0 * math.sin(PI / 4 + phiu / 2) ** 2)
+            * (kp - math.sin(PI / 4 - phiu / 2))
+        )
+
+    if methode == "Meyerhof":
+        nq = math.exp(PI * math.tan(phiu)) * (math.tan(PI / 4 + phiu / 2) ** 2)
+        return (nq - 1.0) * math.tan(1.4 * phiu)
+
+    # De Beer (adapté) / INISMa -> facteur Vpg
+    return _vpg(phiu)
+
+
 # ──────── Interface haut-niveau ────────
 
 # Facteur de conversion DaN/m² -> kgf/cm²
