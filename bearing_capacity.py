@@ -297,7 +297,7 @@ def calculer_pressions_admissibles(
     phiu_deg : angle de frottement brut phi_u [deg]
     largeur_semelle_1_m : largeur de la semelle 1 [m]
     largeur_semelle_2_m : largeur de la semelle 2 [m]
-    coeff_securite : coefficient de securite (alpha)
+    coeff_securite : coefficient de securite (par défaut, devrait être 2)
     rho_sec : masse volumique du sol sec [kg/m³]
     rho_sat : masse volumique du sol sature [kg/m³]
     niveau_nappe : profondeur de la nappe [m] ou None
