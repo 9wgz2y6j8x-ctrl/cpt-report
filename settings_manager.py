@@ -49,6 +49,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "methode_calcul_portance": "De Beer (adapté)",
         "largeur_semelle_fondation_1": 0.6,
         "largeur_semelle_fondation_2": 1.5,
+        "coefficient_securite": 2,
     },
     "unites": {
         "qc_mpa_max": 70.0,
