@@ -1,17 +1,17 @@
 """
 report_generator.py
 
-Module de generation de rapports Excel pour les essais CPT.
+Module de generation de rapports Excel et PDF pour les essais CPT.
 
-Produit un fichier Excel par numero de dossier, avec une feuille par essai.
-Chaque feuille contient les colonnes de calcul (titres + unites + donnees).
+Produit un fichier Excel par numero de dossier, avec une feuille par essai,
+et un fichier PDF avec une page par essai (mise en page ReportLab).
 
 Colonnes remplies :
   - Prof.  : profondeur reechantillonnee
   - Cote   : cote de depart - profondeur
   - qc     : resistance a la pointe corrigee [kg/cm2]
   - q'0    : contrainte naturelle effective [kg/cm2]
-  - Qst    : frottement lateral total corrige [kg]
+  - Qst    : frottement lateral total corrige [kg] (Excel uniquement)
   - phi'   : angle de frottement effectif [deg] (min 30 deg)
   - phi_u  : angle de frottement brut [deg]
   - Padm,1 : pression admissible sous semelle 1 [kg/cm2]
@@ -504,12 +504,16 @@ def _format_worksheet(ws) -> None:
         cell.border = _BORDER_BOTTOM
 
     # Lignes de donnees : Courier New 11 + format numerique
+    # Colonnes 1 (Prof.) et 2 (Cote) : format 0.00
+    # Toutes les autres colonnes : format 0.000
     for row in ws.iter_rows(min_row=3, max_col=_NUM_COLS):
         for cell in row:
             cell.font = _FONT_DATA
             if cell.value is not None:
-                if cell.column in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+                if cell.column in (1, 2):
                     cell.number_format = '0.00'
+                else:
+                    cell.number_format = '0.000'
 
 
 # ──────── Generation Excel ────────
@@ -692,6 +696,10 @@ def generate_excel_reports(
             # Reechantillonner
             resampled = _resample_depths(depths, step_m, prof_arrondie)
 
+            # Omettre la premiere ligne a profondeur 0.00
+            if len(resampled) > 0 and abs(resampled[0]) < 1e-6:
+                resampled = resampled[1:]
+
             # Ecrire la colonne Profondeur (colonne 1, a partir de la ligne 3)
             for row_idx, depth_val in enumerate(resampled, start=3):
                 ws.cell(row=row_idx, column=1, value=round(depth_val, 2))
@@ -710,7 +718,7 @@ def generate_excel_reports(
                 q0 = _contrainte_effective_verticale(
                     depth_val, rho_sec, rho_sat, niveau_nappe,
                 )
-                ws.cell(row=row_idx, column=4, value=round(q0, 2))
+                ws.cell(row=row_idx, column=4, value=round(q0, 3))
                 q0_values.append(q0)
 
             # ── Correction qc et Qst ──
@@ -745,27 +753,27 @@ def generate_excel_reports(
                         qc_val = float(qc_out[idx])
                         ws.cell(
                             row=row_idx, column=3,
-                            value=round(qc_val, 2),
+                            value=round(qc_val, 3),
                         )
                         ws.cell(
                             row=row_idx, column=5,
-                            value=round(float(qst_out[idx]), 2),
+                            value=round(float(qst_out[idx]), 3),
                         )
 
                         # ── Angles de frottement phi' (col 6) et phi_u (col 7) ──
                         q0_val = q0_values[row_idx - 3]
                         phi_prime, phi_u = calculer_angles_frottement(qc_val, q0_val)
                         if phi_prime is not None:
-                            ws.cell(row=row_idx, column=6, value=round(phi_prime, 2))
+                            ws.cell(row=row_idx, column=6, value=round(phi_prime, 3))
                         if phi_u is not None:
-                            ws.cell(row=row_idx, column=7, value=round(phi_u, 2))
+                            ws.cell(row=row_idx, column=7, value=round(phi_u, 3))
 
                         # ── Coefficient de compressibilite C (col 10) ──
                         # C = alpha * vbd, ou vbd = qc / q'0
                         if q0_val > 0:
                             vbd = qc_val / q0_val
                             coeff_c = alpha_essai * vbd
-                            ws.cell(row=row_idx, column=10, value=round(coeff_c, 2))
+                            ws.cell(row=row_idx, column=10, value=round(coeff_c, 3))
 
                         # ── Pressions admissibles Padm1 (col 8) et Padm2 (col 9) ──
                         if phi_prime is not None and phi_u is not None and q0_val > 0:
@@ -783,8 +791,8 @@ def generate_excel_reports(
                                 niveau_nappe=niveau_nappe,
                                 qc_kgcm2=qc_val,
                             )
-                            ws.cell(row=row_idx, column=8, value=round(padm1, 2))
-                            ws.cell(row=row_idx, column=9, value=round(padm2, 2))
+                            ws.cell(row=row_idx, column=8, value=round(padm1, 3))
+                            ws.cell(row=row_idx, column=9, value=round(padm2, 3))
 
                             # ── Nq (col 11) et Nγ (col 12) ──
                             nq_val = calculer_nq(
@@ -797,8 +805,8 @@ def generate_excel_reports(
                                 methode=methode_portance,
                                 phiu_deg=phi_u,
                             )
-                            ws.cell(row=row_idx, column=11, value=round(nq_val, 2))
-                            ws.cell(row=row_idx, column=12, value=round(ng_val, 2))
+                            ws.cell(row=row_idx, column=11, value=round(nq_val, 3))
+                            ws.cell(row=row_idx, column=12, value=round(ng_val, 3))
             else:
                 machine_name = essai.get("machine", "").strip()
                 if not machine_name:
@@ -820,6 +828,764 @@ def generate_excel_reports(
         except OSError as exc:
             logger.error(
                 "Erreur d'ecriture du fichier %s : %s", filepath, exc
+            )
+            raise
+
+    return generated_files
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Calcul des donnees partagees (utilise par Excel et PDF)
+# ══════════════════════════════════════════════════════════════════════
+
+def _compute_essai_data(
+    essai: Dict[str, Any],
+    settings_manager,
+    cleaning_entries: Optional[Dict[str, Any]],
+    raw_data_manager,
+    cotes: Optional[Dict[str, float]],
+    observations: Optional[Dict[str, dict]],
+) -> Optional[Dict[str, Any]]:
+    """Calcule toutes les donnees d'un essai pour le rapport.
+
+    Retourne un dict contenant :
+        'resampled'    : np.ndarray des profondeurs reechantillonnees (sans 0.00)
+        'cote_depart'  : float
+        'q0_values'    : list[float]
+        'qc_values'    : list[float | None]
+        'qst_values'   : list[float | None]
+        'phi_prime_values' : list[float | None]
+        'phi_u_values'     : list[float | None]
+        'padm1_values'     : list[float | None]
+        'padm2_values'     : list[float | None]
+        'coeff_c_values'   : list[float | None]
+        'nq_values'        : list[float | None]
+        'ng_values'        : list[float | None]
+
+    Retourne None si les donnees ne peuvent pas etre chargees.
+    """
+    step_cm = settings_manager.get("rapport", "reechantillonnage_cm") or 20
+    step_m = step_cm / 100.0
+
+    rho_sec = settings_manager.get("parametres_calcul", "masse_volumique_sol_sec") or 1800
+    rho_sat = settings_manager.get("parametres_calcul", "masse_volumique_sol_sature") or 2000
+
+    methode_portance = (
+        settings_manager.get("parametres_calcul", "methode_calcul_portance")
+        or "De Beer (adapté)"
+    )
+    largeur_semelle_1 = (
+        settings_manager.get("parametres_calcul", "largeur_semelle_fondation_1")
+        or 0.6
+    )
+    largeur_semelle_2 = (
+        settings_manager.get("parametres_calcul", "largeur_semelle_fondation_2")
+        or 1.5
+    )
+    coeff_securite = (
+        settings_manager.get("parametres_calcul", "coefficient_securite")
+        or 2
+    )
+    alpha_essai = essai.get("alpha", 1.5)
+
+    file_path = essai.get("file_path", "")
+    file_data = None
+    if raw_data_manager:
+        file_data = raw_data_manager.get_file(file_path)
+    if file_data is None:
+        file_data = {"file_path": file_path}
+
+    df = _get_dataframe_for_essai(file_path, file_data, cleaning_entries)
+    if df is None:
+        return None
+
+    try:
+        cfg = CPTPlotConfig()
+        col_depth = _resolve_column_name(df, cfg.col_depth, "col_depth")
+    except Exception:
+        return None
+
+    depths = df[col_depth].dropna().values.astype(float)
+    depths = np.sort(depths)
+
+    prof_arrondie = essai.get("prof_arrondie")
+    if prof_arrondie is None:
+        prof_arrondie = float(depths[-1]) if len(depths) > 0 else 0.0
+
+    resampled = _resample_depths(depths, step_m, prof_arrondie)
+
+    # Omettre la premiere ligne a profondeur 0.00
+    if len(resampled) > 0 and abs(resampled[0]) < 1e-6:
+        resampled = resampled[1:]
+
+    cote_depart = (cotes or {}).get(file_path, 0.0)
+
+    obs_store = (observations or {}).get(file_path)
+    niveau_nappe = _resolve_niveau_nappe(obs_store)
+
+    n = len(resampled)
+    q0_values = []
+    qc_values = [None] * n
+    qst_values = [None] * n
+    phi_prime_values = [None] * n
+    phi_u_values = [None] * n
+    padm1_values = [None] * n
+    padm2_values = [None] * n
+    coeff_c_values = [None] * n
+    nq_values = [None] * n
+    ng_values = [None] * n
+
+    for i, depth_val in enumerate(resampled):
+        q0 = _contrainte_effective_verticale(depth_val, rho_sec, rho_sat, niveau_nappe)
+        q0_values.append(q0)
+
+    correction_params = _build_correction_params(essai, settings_manager, raw_data_manager)
+
+    if correction_params is not None:
+        tip_area_cm2 = settings_manager.get("unites", "tip_area_cm2") or 10.0
+        unit_qc = "MPa"
+        unit_qst = "kN"
+        if raw_data_manager:
+            unit_qc = raw_data_manager.get_unit(file_path, "unit_qc")
+            unit_qst = raw_data_manager.get_unit(file_path, "unit_qst")
+
+        corrections = _compute_corrections(
+            df, col_depth, correction_params, unit_qc, unit_qst, tip_area_cm2,
+        )
+
+        if corrections is not None:
+            corr_depths = corrections["depths"]
+            qc_out = corrections["qc_out"]
+            qst_out = corrections["qst_out"]
+
+            for i, depth_val in enumerate(resampled):
+                idx = int(np.argmin(np.abs(corr_depths - depth_val)))
+                qc_val = float(qc_out[idx])
+                qc_values[i] = qc_val
+                qst_values[i] = float(qst_out[idx])
+
+                q0_val = q0_values[i]
+                phi_prime, phi_u = calculer_angles_frottement(qc_val, q0_val)
+                phi_prime_values[i] = phi_prime
+                phi_u_values[i] = phi_u
+
+                if q0_val > 0:
+                    vbd = qc_val / q0_val
+                    coeff_c_values[i] = alpha_essai * vbd
+
+                if phi_prime is not None and phi_u is not None and q0_val > 0:
+                    padm1, padm2 = calculer_pressions_admissibles(
+                        methode=methode_portance,
+                        profondeur=depth_val,
+                        q0_kgcm2=q0_val,
+                        phip_deg=phi_prime,
+                        phiu_deg=phi_u,
+                        largeur_semelle_1_m=largeur_semelle_1,
+                        largeur_semelle_2_m=largeur_semelle_2,
+                        coeff_securite=coeff_securite,
+                        rho_sec=rho_sec,
+                        rho_sat=rho_sat,
+                        niveau_nappe=niveau_nappe,
+                        qc_kgcm2=qc_val,
+                    )
+                    padm1_values[i] = padm1
+                    padm2_values[i] = padm2
+
+                    nq_values[i] = calculer_nq(
+                        methode=methode_portance,
+                        phiu_deg=phi_u,
+                        phip_deg=phi_prime,
+                        q0_kgcm2=q0_val,
+                    )
+                    ng_values[i] = calculer_ng(
+                        methode=methode_portance,
+                        phiu_deg=phi_u,
+                    )
+
+    return {
+        "resampled": resampled,
+        "cote_depart": cote_depart,
+        "q0_values": q0_values,
+        "qc_values": qc_values,
+        "qst_values": qst_values,
+        "phi_prime_values": phi_prime_values,
+        "phi_u_values": phi_u_values,
+        "padm1_values": padm1_values,
+        "padm2_values": padm2_values,
+        "coeff_c_values": coeff_c_values,
+        "nq_values": nq_values,
+        "ng_values": ng_values,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Generation PDF (ReportLab)
+# ══════════════════════════════════════════════════════════════════════
+
+def _init_pdf_fonts():
+    """Enregistre les polices pour le rapport PDF.
+
+    Calibri (Windows) / Carlito (Linux fallback), puis Arial.
+    """
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    calibri_paths = {
+        "Calibri":      ["C:/Windows/Fonts/calibri.ttf",
+                         "/usr/share/fonts/truetype/crosextra/Carlito-Regular.ttf"],
+        "Calibri-Bold": ["C:/Windows/Fonts/calibrib.ttf",
+                         "/usr/share/fonts/truetype/crosextra/Carlito-Bold.ttf"],
+    }
+    for name, paths in calibri_paths.items():
+        for p in paths:
+            if os.path.exists(p):
+                try:
+                    pdfmetrics.registerFont(TTFont(name, p))
+                    break
+                except Exception:
+                    continue
+
+    arial_paths = {
+        "Arial":      ["C:/Windows/Fonts/arial.ttf",
+                       "/usr/share/fonts/truetype/msttcorefonts/Arial.ttf"],
+        "Arial-Bold": ["C:/Windows/Fonts/arialbd.ttf",
+                       "/usr/share/fonts/truetype/msttcorefonts/Arial_Bold.ttf"],
+    }
+    for name, paths in arial_paths.items():
+        for p in paths:
+            if os.path.exists(p):
+                try:
+                    pdfmetrics.registerFont(TTFont(name, p))
+                    break
+                except Exception:
+                    continue
+
+    # Determiner les polices disponibles
+    font_normal = "Calibri"
+    font_bold = "Calibri-Bold"
+    try:
+        pdfmetrics.getFont(font_normal)
+    except KeyError:
+        font_normal = "Helvetica"
+        font_bold = "Helvetica-Bold"
+
+    try:
+        pdfmetrics.getFont("Arial")
+        font_arial = "Arial"
+        font_arial_bold = "Arial-Bold"
+    except KeyError:
+        font_arial = font_normal
+        font_arial_bold = font_bold
+
+    return font_normal, font_bold, font_arial, font_arial_bold
+
+
+# ──────── Constantes PDF ────────
+
+_PDF_MAX_DATA_ROWS = 50
+
+# Caractere phi
+_PHI = "\u03C6"
+
+
+def _pdf_draw_text_with_sub_super(c, x, y, fragments, font_name, font_size,
+                                  alignment="center", col_width=0,
+                                  font_bold=None):
+    """Dessine du texte avec indices/exposants/gras sur le canvas PDF."""
+    from reportlab.pdfbase import pdfmetrics as pm
+
+    if font_bold is None:
+        font_bold = font_name
+
+    total_width = 0
+    for text, style in fragments:
+        sz = font_size * 0.65 if style in ("sub", "super") else font_size
+        fn = font_bold if style == "bold" else font_name
+        total_width += pm.stringWidth(text, fn, sz)
+
+    if alignment == "center":
+        draw_x = x + col_width / 2 - total_width / 2
+    elif alignment == "right":
+        draw_x = x + col_width - total_width - 2
+    else:
+        draw_x = x + 2
+
+    for text, style in fragments:
+        if style in ("sub", "super"):
+            sz = font_size * 0.65
+            fn = font_name
+            dy = -font_size * 0.12 if style == "sub" else font_size * 0.35
+            c.setFont(fn, sz)
+            c.drawString(draw_x, y + dy, text)
+            draw_x += pm.stringWidth(text, fn, sz)
+        else:
+            sz = font_size
+            fn = font_bold if style == "bold" else font_name
+            c.setFont(fn, sz)
+            c.drawString(draw_x, y, text)
+            draw_x += pm.stringWidth(text, fn, sz)
+
+
+def _pdf_draw_footer_line_with_m3(c, x, y, prefix, font_name, font_size):
+    """Dessine une ligne contenant [kg/m3] avec exposant."""
+    from reportlab.pdfbase import pdfmetrics as pm
+
+    c.setFont(font_name, font_size)
+    c.drawString(x, y, prefix)
+    w = pm.stringWidth(prefix, font_name, font_size)
+    c.drawString(x + w, y, "[kg/m")
+    w += pm.stringWidth("[kg/m", font_name, font_size)
+    small_sz = font_size * 0.65
+    c.setFont(font_name, small_sz)
+    c.drawString(x + w, y + font_size * 0.35, "3")
+    w += pm.stringWidth("3", font_name, small_sz)
+    c.setFont(font_name, font_size)
+    c.drawString(x + w, y, "]")
+
+
+def _format_date_for_pdf(date_str: str) -> str:
+    """Convertit une date en format MM/AAAA pour le rapport PDF.
+
+    Accepte divers formats d'entree et retourne MM/AAAA.
+    """
+    if not date_str or not date_str.strip():
+        return ""
+    date_str = date_str.strip()
+
+    # Essayer differents formats courants
+    import re as _re
+    # Format DD/MM/YYYY ou DD-MM-YYYY
+    m = _re.match(r'(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})', date_str)
+    if m:
+        return f"{m.group(2)}/{m.group(3)}"
+    # Format YYYY-MM-DD
+    m = _re.match(r'(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})', date_str)
+    if m:
+        return f"{m.group(2)}/{m.group(1)}"
+    # Format MM/YYYY deja correct
+    m = _re.match(r'(\d{1,2})[/\-.](\d{4})$', date_str)
+    if m:
+        return f"{m.group(1)}/{m.group(2)}"
+    # Retourner tel quel si non reconnu
+    return date_str
+
+
+def generate_pdf_report(
+    essais: List[Dict[str, Any]],
+    settings_manager,
+    cleaning_entries: Optional[Dict[str, Any]] = None,
+    raw_data_manager=None,
+    cotes: Optional[Dict[str, float]] = None,
+    observations: Optional[Dict[str, dict]] = None,
+    progress_callback: Optional[Callable[[int, int, str], None]] = None,
+) -> Dict[str, str]:
+    """Genere les fichiers PDF de rapport, un par numero de dossier.
+
+    Chaque essai occupe une page du PDF, avec la mise en page ReportLab.
+
+    Parametres
+    ----------
+    essais : list[dict]
+        Liste des essais depuis TraiterView.get_ordered_essais().
+    settings_manager : SettingsManager
+        Gestionnaire de reglages.
+    cleaning_entries : dict, optional
+        Mapping {file_path: CPTFileEntry}.
+    raw_data_manager : RawDataManager, optional
+        Gestionnaire des donnees brutes.
+    cotes : dict, optional
+        Mapping {file_path: cote_de_depart}.
+    observations : dict, optional
+        Mapping {file_path: store_dict}.
+    progress_callback : callable, optional
+        Fonction(current, total, message).
+
+    Retours
+    -------
+    dict
+        Mapping {numero_dossier: chemin_fichier_pdf}.
+    """
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib.colors import black
+    from reportlab.pdfgen import canvas
+    from reportlab.pdfbase import pdfmetrics as pm
+
+    font_normal, font_bold, font_arial, font_arial_bold = _init_pdf_fonts()
+
+    dossier_resultats = settings_manager.get("dossiers_travail", "dossier_resultats")
+    if not dossier_resultats or not dossier_resultats.strip():
+        raise ValueError(
+            "Le dossier d'enregistrement des resultats n'est pas configure."
+        )
+
+    rho_sec = settings_manager.get("parametres_calcul", "masse_volumique_sol_sec") or 1800
+    rho_sat = settings_manager.get("parametres_calcul", "masse_volumique_sol_sature") or 2000
+    coeff_securite = (
+        settings_manager.get("parametres_calcul", "coefficient_securite") or 2
+    )
+
+    # ── Dimensions de page ──
+    PAGE_W, PAGE_H = A4
+    LEFT_MARGIN = 15 * mm
+    RIGHT_MARGIN = 15 * mm
+    TOP_MARGIN = 14 * mm
+    BOTTOM_MARGIN = 10 * mm
+    TABLE_WIDTH = PAGE_W - LEFT_MARGIN - RIGHT_MARGIN
+
+    LOGO_LEFT = LEFT_MARGIN
+    LOGO_WIDTH_PX = 145
+    LOGO_HEIGHT_PX = 70
+    LOGO_V_OFFSET = 15
+    LABELS_LEFT = LEFT_MARGIN + LOGO_WIDTH_PX + 10
+
+    META_BLOCK_WIDTH = 120
+    META_X_LABEL = LEFT_MARGIN + TABLE_WIDTH - META_BLOCK_WIDTH
+    META_X_VALUE = LEFT_MARGIN + TABLE_WIDTH - 8
+
+    COL_RATIOS = [1.0, 1.0, 1.2, 1.2, 0.8, 0.8, 0.8, 0.8, 1.1, 1.1, 1.1]
+    _total_ratio = sum(COL_RATIOS)
+    COL_WIDTHS = [r / _total_ratio * TABLE_WIDTH for r in COL_RATIOS]
+
+    ROW_HEIGHT = 12.25
+    HEADER_ROW_HEIGHT = 17
+    UNIT_ROW_HEIGHT = 16
+
+    FONT_SIZE_COL_HEADER = 11
+    FONT_SIZE_COL_UNIT = 11
+    FONT_SIZE_DATA = 10
+    FONT_SIZE_TITLE = 16
+    FONT_SIZE_SUBTITLE = 11
+    FONT_SIZE_TEST_TYPE = 10
+    FONT_SIZE_SMALL = 7
+    FONT_SIZE_META = 8
+    FONT_SIZE_FOOTER = 10
+
+    FOOTER_BOX_HEIGHT = 40
+
+    def col_x(col_index):
+        return LEFT_MARGIN + sum(COL_WIDTHS[:col_index])
+
+    # Rechercher le logo
+    logo_path = None
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    for candidate in ["icons/Inisma.jpg", "icons/inisma.jpg", "icons/INISMA.jpg"]:
+        full = os.path.join(script_dir, candidate)
+        if os.path.exists(full):
+            logo_path = full
+            break
+
+    # Texte societe (statique)
+    company_line1 = "Géotechnique et Environnement Sol - 32(0)65/40 34 34 - Fax: 32(0)65/34 80 05"
+    company_line2 = "Avenue Gouverneur Cornez 4, B-7000 Mons (Belgique) - www.bcrc.be"
+
+    # ── Grouper par numero de dossier ──
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    for essai in essais:
+        job = essai.get("job", "").strip() or "Sans dossier"
+        groups.setdefault(job, []).append(essai)
+
+    total_essais = len(essais)
+    current = 0
+    generated_files: Dict[str, str] = {}
+
+    for job_number, job_essais in groups.items():
+        safe_job = re.sub(r'[<>:"/\\|?*]', '_', job_number)
+        filename = f"{safe_job}-Rapport CPT.pdf"
+        filepath = os.path.join(dossier_resultats, filename)
+
+        os.makedirs(dossier_resultats, exist_ok=True)
+        c = canvas.Canvas(filepath, pagesize=A4)
+        c.setTitle("CPT Report - Sondage au Pénétromètre Statique")
+
+        for essai_idx, essai in enumerate(job_essais):
+            current += 1
+            test_name = essai.get("test", "").strip() or "Essai"
+
+            if progress_callback:
+                progress_callback(
+                    current, total_essais,
+                    f"PDF {job_number} - {test_name}"
+                )
+
+            # Calculer les donnees
+            data = _compute_essai_data(
+                essai, settings_manager, cleaning_entries,
+                raw_data_manager, cotes, observations,
+            )
+
+            alpha_essai = essai.get("alpha", 1.5)
+            alpha_str = (
+                f"{alpha_essai:.1f}".replace(".", ",")
+                if alpha_essai != int(alpha_essai)
+                else str(int(alpha_essai))
+            )
+
+            # Metadonnees pour l'en-tete
+            location = essai.get("location", "").strip()
+            street = essai.get("street", "").strip()
+            test_id = essai.get("test", "").strip()
+            dossier = essai.get("job", "").strip()
+            date_str = _format_date_for_pdf(essai.get("date", ""))
+
+            prof_atteinte = essai.get("prof_atteinte")
+            prof_atteinte_str = (
+                f"{prof_atteinte:.2f} m".replace(".", ",")
+                if prof_atteinte is not None else ""
+            )
+
+            cote_depart_val = (cotes or {}).get(essai.get("file_path", ""), 0.0)
+            cote_depart_str = f"{cote_depart_val:.2f} m".replace(".", ",")
+
+            # ── Dessiner l'en-tete ──
+            top_y = PAGE_H - TOP_MARGIN
+            y = top_y
+
+            c.setFont(font_bold, FONT_SIZE_TITLE)
+            c.drawString(LABELS_LEFT, y, location.upper() if location else "")
+            y -= 14
+
+            c.setFont(font_bold, FONT_SIZE_SUBTITLE)
+            c.drawString(LABELS_LEFT, y, street)
+            y -= 18
+
+            c.setFont(font_bold, FONT_SIZE_TEST_TYPE)
+            test_type_text = "SONDAGE AU PENETROMETRE STATIQUE"
+            c.drawString(LABELS_LEFT, y, test_type_text)
+            type_w = pm.stringWidth(test_type_text, font_bold, FONT_SIZE_TEST_TYPE)
+            c.setFont(font_bold, 13)
+            c.drawString(LABELS_LEFT + type_w + 15, y, test_id)
+            y -= 13
+
+            c.setFont(font_normal, FONT_SIZE_SMALL)
+            c.drawString(LABELS_LEFT, y, company_line1)
+            y -= 8
+            c.drawString(LABELS_LEFT, y, company_line2)
+            y -= 8
+
+            # Logo
+            text_visual_top = top_y + FONT_SIZE_TITLE * 0.75
+            text_visual_bottom = top_y - 17 - 18 - FONT_SIZE_TEST_TYPE * 0.25
+            text_center_y = (text_visual_top + text_visual_bottom) / 2
+
+            if logo_path:
+                logo_y = text_center_y - LOGO_HEIGHT_PX / 2 + LOGO_V_OFFSET
+                try:
+                    c.drawImage(logo_path, LOGO_LEFT, logo_y,
+                                width=LOGO_WIDTH_PX, height=LOGO_HEIGHT_PX,
+                                preserveAspectRatio=True, anchor='sw',
+                                mask='auto')
+                except Exception as e:
+                    logger.warning("Impossible de charger le logo PDF: %s", e)
+
+            # Bloc metadonnees (droite)
+            meta_y = top_y + 2
+            for label, value, dy in [
+                ("Dossier:", dossier, 0),
+                ("Date:", date_str, -13),
+                ("Prof. Atteinte:", prof_atteinte_str, -18),
+                ("Cote de départ:", cote_depart_str, -13),
+            ]:
+                meta_y += dy
+                c.setFont(font_normal, FONT_SIZE_META)
+                c.drawString(META_X_LABEL, meta_y, label)
+                c.setFont(font_bold, FONT_SIZE_META)
+                c.drawRightString(META_X_VALUE, meta_y, value)
+
+            header_end_y = y
+
+            # ── En-tete du tableau ──
+            table_start_y = header_end_y - 8
+            n_cols = len(COL_WIDTHS)
+            total_h = HEADER_ROW_HEIGHT + UNIT_ROW_HEIGHT
+            block_top = table_start_y
+            block_bottom = table_start_y - total_h
+            row_sep_y = table_start_y - HEADER_ROW_HEIGHT
+
+            c.setStrokeColor(black)
+            c.setLineWidth(0.8)
+            c.rect(LEFT_MARGIN, block_bottom, TABLE_WIDTH, total_h,
+                   stroke=1, fill=0)
+
+            for i in range(1, n_cols):
+                c.line(col_x(i), block_top, col_x(i), block_bottom)
+
+            # Titres des colonnes PDF :
+            # Prof, Cote, qc, q'0, phi', phi_u, Nq, Ngamma, Padm_B1, Padm_B2, C
+            largeur_semelle_1 = (
+                settings_manager.get("parametres_calcul", "largeur_semelle_fondation_1")
+                or 0.6
+            )
+            largeur_semelle_2 = (
+                settings_manager.get("parametres_calcul", "largeur_semelle_fondation_2")
+                or 1.5
+            )
+            b1_cm = int(round(largeur_semelle_1 * 100))
+            b2_cm = int(round(largeur_semelle_2 * 100))
+
+            labels = [
+                [("Prof", "bold")],
+                [("Cote", "bold")],
+                [("q", "bold"), ("c", "sub")],
+                [("q'", "bold"), ("o", "sub")],
+                [(_PHI + "'", "bold")],
+                [(_PHI, "bold"), ("u", "sub")],
+                [("N", "bold"), ("q", "sub")],
+                [("N", "bold"), ("\u03B3", "sub")],
+                [("P", "bold"), (f"adm,{b1_cm}", "sub")],
+                [("P", "bold"), (f"adm,{b2_cm}", "sub")],
+                [("C", "bold")],
+            ]
+
+            ARIAL_COL_INDICES = {4, 5, 6, 7}
+
+            text_y = row_sep_y + (HEADER_ROW_HEIGHT - FONT_SIZE_COL_HEADER) / 2 + 1
+            for i, frags in enumerate(labels):
+                if i in ARIAL_COL_INDICES:
+                    _pdf_draw_text_with_sub_super(
+                        c, col_x(i), text_y, frags, font_arial,
+                        FONT_SIZE_COL_HEADER, "center", COL_WIDTHS[i],
+                        font_bold=font_arial_bold)
+                else:
+                    _pdf_draw_text_with_sub_super(
+                        c, col_x(i), text_y, frags, font_bold,
+                        FONT_SIZE_COL_HEADER, "center", COL_WIDTHS[i])
+
+            # Unites
+            units = [
+                [("[m]", "normal")],
+                [("[m]", "normal")],
+                [("[kg/cm", "normal"), ("2", "super"), ("]", "normal")],
+                [("[kg/cm", "normal"), ("2", "super"), ("]", "normal")],
+                [("[°]", "normal")],
+                [("[°]", "normal")],
+                [("[/]", "normal")],
+                [("[/]", "normal")],
+                [("[kg/cm", "normal"), ("2", "super"), ("]", "normal")],
+                [("[kg/cm", "normal"), ("2", "super"), ("]", "normal")],
+                [(f"[/] \u03B1={alpha_str}", "normal")],
+            ]
+
+            text_y = block_bottom + (UNIT_ROW_HEIGHT - FONT_SIZE_COL_UNIT) / 2 + 1
+            for i, frags in enumerate(units):
+                _pdf_draw_text_with_sub_super(
+                    c, col_x(i), text_y, frags, font_normal,
+                    FONT_SIZE_COL_UNIT, "center", COL_WIDTHS[i])
+
+            header_block_bottom = block_bottom
+
+            # ── Donnees du tableau ──
+            if data is not None:
+                resampled = data["resampled"]
+                n_data = min(len(resampled), _PDF_MAX_DATA_ROWS)
+            else:
+                n_data = 0
+
+            if n_data > 0:
+                block_height = n_data * ROW_HEIGHT
+                data_top = header_block_bottom
+                data_bottom = data_top - block_height
+
+                c.setStrokeColor(black)
+                c.setLineWidth(0.8)
+                c.rect(LEFT_MARGIN, data_bottom, TABLE_WIDTH, block_height,
+                       stroke=1, fill=0)
+
+                for i in range(1, n_cols):
+                    c.line(col_x(i), data_top, col_x(i), data_bottom)
+
+                # Mapping colonnes PDF :
+                # 0:Prof, 1:Cote, 2:qc, 3:q'0, 4:phi', 5:phi_u,
+                # 6:Nq, 7:Ng, 8:Padm1, 9:Padm2, 10:C
+                #
+                # Formats PDF :
+                # - Prof (0), Cote (1), q'0 (3) : format 0.00
+                # - Toutes les autres : format 0.0
+                for row_idx in range(n_data):
+                    row_y = data_top - (row_idx + 1) * ROW_HEIGHT
+                    text_y_row = row_y + (ROW_HEIGHT - FONT_SIZE_DATA) / 2 + 1
+
+                    depth_val = data["resampled"][row_idx]
+                    cote_val = data["cote_depart"] - depth_val
+                    q0_val = data["q0_values"][row_idx]
+                    qc_val = data["qc_values"][row_idx]
+                    phi_p = data["phi_prime_values"][row_idx]
+                    phi_u_val = data["phi_u_values"][row_idx]
+                    nq_val = data["nq_values"][row_idx]
+                    ng_val = data["ng_values"][row_idx]
+                    padm1_val = data["padm1_values"][row_idx]
+                    padm2_val = data["padm2_values"][row_idx]
+                    coeff_c_val = data["coeff_c_values"][row_idx]
+
+                    # Construire les valeurs de la ligne
+                    # Colonnes PDF : Prof, Cote, qc, q'0, phi', phi_u, Nq, Ng, Padm1, Padm2, C
+                    row_values = [
+                        (depth_val, "0.00"),
+                        (cote_val, "0.00"),
+                        (qc_val, "0.0"),
+                        (q0_val, "0.00"),
+                        (phi_p, "0.0"),
+                        (phi_u_val, "0.0"),
+                        (nq_val, "0.0"),
+                        (ng_val, "0.0"),
+                        (padm1_val, "0.0"),
+                        (padm2_val, "0.0"),
+                        (coeff_c_val, "0.0"),
+                    ]
+
+                    for col_idx, (val, fmt) in enumerate(row_values):
+                        if val is not None:
+                            if fmt == "0.00":
+                                text = f"{val:.2f}".replace(".", ",")
+                            else:
+                                text = f"{val:.1f}".replace(".", ",")
+                            c.setFont(font_normal, FONT_SIZE_DATA)
+                            c.drawRightString(
+                                col_x(col_idx) + COL_WIDTHS[col_idx] - 3,
+                                text_y_row, text)
+
+            # ── Pied de page ──
+            c.setStrokeColor(black)
+            c.setLineWidth(0.8)
+            c.rect(LEFT_MARGIN, BOTTOM_MARGIN, TABLE_WIDTH, FOOTER_BOX_HEIGHT,
+                   stroke=1, fill=0)
+
+            line_y = BOTTOM_MARGIN + FOOTER_BOX_HEIGHT - 13
+            _pdf_draw_footer_line_with_m3(
+                c, LEFT_MARGIN + 5, line_y,
+                f"Masse volumique du sol saturé: {int(rho_sat)} ",
+                font_normal, FONT_SIZE_FOOTER)
+
+            line_y -= 12
+            _pdf_draw_footer_line_with_m3(
+                c, LEFT_MARGIN + 5, line_y,
+                f"Masse volumique du sol: {int(rho_sec)} ",
+                font_normal, FONT_SIZE_FOOTER)
+
+            line_y -= 12
+            frags = [
+                ("P", "bold"),
+                ("adm,B", "sub"),
+                (f" = pression admissible sous une semelle de B cm de largeur "
+                 f"(avec un coefficient de sécurité égal à {int(coeff_securite)})",
+                 "normal"),
+            ]
+            _pdf_draw_text_with_sub_super(
+                c, LEFT_MARGIN + 5, line_y, frags, font_normal,
+                FONT_SIZE_FOOTER, "left", TABLE_WIDTH)
+
+            # Nouvelle page (sauf pour le dernier essai)
+            if essai_idx < len(job_essais) - 1:
+                c.showPage()
+
+        # Sauvegarder le PDF
+        try:
+            c.save()
+            generated_files[job_number] = filepath
+            logger.info("Fichier PDF genere : %s", filepath)
+        except OSError as exc:
+            logger.error(
+                "Erreur d'ecriture du fichier PDF %s : %s", filepath, exc
             )
             raise
 

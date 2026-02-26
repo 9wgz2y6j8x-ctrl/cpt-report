@@ -12,6 +12,7 @@ Logique metier :
   - Ordre personnalisable (Monter / Descendre), persiste pour le rapport
 """
 
+import os
 import re
 import math
 import threading
@@ -705,6 +706,9 @@ class TraiterView(ctk.CTkFrame):
                 "file_path": fp,
                 "job": rdm.get_effective_value(fp, "Job Number") or "",
                 "test": rdm.get_effective_value(fp, "TestNumber") or "",
+                "location": rdm.get_effective_value(fp, "Location") or "",
+                "street": rdm.get_effective_value(fp, "Street") or "",
+                "date": rdm.get_effective_value(fp, "Date") or "",
                 "machine": params.get("machine", ""),
                 "section": params.get("section", "Grande"),
                 "delta_petit": params.get("delta_petit", 0),
@@ -892,7 +896,7 @@ class TraiterView(ctk.CTkFrame):
 
         def _run():
             try:
-                from report_generator import generate_excel_reports
+                from report_generator import generate_excel_reports, generate_pdf_report
 
                 def progress_cb(current, total, msg):
                     self.after(0, lambda c=current, t=total, m=msg:
@@ -910,6 +914,19 @@ class TraiterView(ctk.CTkFrame):
                     observations=observations_map,
                     progress_callback=progress_cb,
                 )
+
+                # Generer le rapport PDF en complement
+                pdf_result = generate_pdf_report(
+                    essais=essais,
+                    settings_manager=sm,
+                    cleaning_entries=cleaning_map,
+                    raw_data_manager=rdm,
+                    cotes=cotes_map,
+                    observations=observations_map,
+                    progress_callback=progress_cb,
+                )
+                result.update({f"{k}_pdf": v for k, v in pdf_result.items()})
+
                 self.after(0, lambda: self._on_report_done(result))
             except Exception as exc:
                 logging.getLogger(__name__).error(
@@ -923,21 +940,27 @@ class TraiterView(ctk.CTkFrame):
     def _on_report_done(self, result: Dict[str, str]):
         """Callback appele quand la generation est terminee avec succes."""
         self._btn_report.configure(state="normal")
-        n_files = len(result)
-        if n_files == 0:
+        # Compter les fichiers Excel et PDF separement
+        excel_files = {k: v for k, v in result.items() if not k.endswith("_pdf")}
+        pdf_files = {k: v for k, v in result.items() if k.endswith("_pdf")}
+        n_excel = len(excel_files)
+        n_pdf = len(pdf_files)
+
+        if n_excel == 0 and n_pdf == 0:
             self._report_status.configure(
                 text="Aucun fichier genere.",
                 text_color="#CC6600",
             )
-        elif n_files == 1:
-            path = list(result.values())[0]
+        elif n_excel == 1 and n_pdf <= 1:
+            path = list(excel_files.values())[0]
+            dossier = os.path.dirname(path)
             self._report_status.configure(
-                text=f"Rapport genere : {path}",
+                text=f"Rapports Excel + PDF generes dans : {dossier}",
                 text_color="#16A34A",
             )
         else:
             self._report_status.configure(
-                text=f"{n_files} rapports generes avec succes.",
+                text=f"{n_excel} rapport(s) Excel + {n_pdf} PDF generes avec succes.",
                 text_color="#16A34A",
             )
 
