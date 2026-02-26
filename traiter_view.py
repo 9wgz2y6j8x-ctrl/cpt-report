@@ -705,6 +705,9 @@ class TraiterView(ctk.CTkFrame):
                 "file_path": fp,
                 "job": rdm.get_effective_value(fp, "Job Number") or "",
                 "test": rdm.get_effective_value(fp, "TestNumber") or "",
+                "location": rdm.get_effective_value(fp, "Location") or "",
+                "street": rdm.get_effective_value(fp, "Street") or "",
+                "date": rdm.get_effective_value(fp, "Date") or "",
                 "machine": params.get("machine", ""),
                 "section": params.get("section", "Grande"),
                 "delta_petit": params.get("delta_petit", 0),
@@ -892,7 +895,7 @@ class TraiterView(ctk.CTkFrame):
 
         def _run():
             try:
-                from report_generator import generate_excel_reports
+                from report_generator import generate_excel_reports, generate_pdf_report
 
                 def progress_cb(current, total, msg):
                     self.after(0, lambda c=current, t=total, m=msg:
@@ -910,6 +913,19 @@ class TraiterView(ctk.CTkFrame):
                     observations=observations_map,
                     progress_callback=progress_cb,
                 )
+
+                # Generer le rapport PDF en complement
+                pdf_result = generate_pdf_report(
+                    essais=essais,
+                    settings_manager=sm,
+                    cleaning_entries=cleaning_map,
+                    raw_data_manager=rdm,
+                    cotes=cotes_map,
+                    observations=observations_map,
+                    progress_callback=progress_cb,
+                )
+                result.update({f"{k}_pdf": v for k, v in pdf_result.items()})
+
                 self.after(0, lambda: self._on_report_done(result))
             except Exception as exc:
                 logging.getLogger(__name__).error(

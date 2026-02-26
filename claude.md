@@ -47,7 +47,7 @@ python presenter.py
 
 ## Dependances
 
-customtkinter, pandas, numpy, scipy, matplotlib, Pillow, chardet, openpyxl
+customtkinter, pandas, numpy, scipy, matplotlib, Pillow, chardet, openpyxl, reportlab
 
 ## Notes
 
