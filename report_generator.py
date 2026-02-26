@@ -16,6 +16,8 @@ Colonnes remplies :
   - phi_u  : angle de frottement brut [deg]
   - Padm,1 : pression admissible sous semelle 1 [kg/cm2]
   - Padm,2 : pression admissible sous semelle 2 [kg/cm2]
+  - Nq     : facteur de portance Nq (propre a la methode choisie)
+  - Ng     : facteur de portance Ngamma (Vpg pour De Beer / INISMa)
 
 Les colonnes qc et Qst necessitent la selection d'une machine dans la
 vue Calculer ; sans machine, elles restent vides (ainsi que phi', phi_u,
@@ -44,7 +46,7 @@ from cpt_correction import (
 )
 from units import qc_to_internal, qst_to_internal, internal_to_plot
 from friction_angle import calculer_angles_frottement
-from bearing_capacity import calculer_pressions_admissibles
+from bearing_capacity import calculer_pressions_admissibles, calculer_nq, calculer_ng
 
 logger = logging.getLogger(__name__)
 
@@ -774,6 +776,20 @@ def generate_excel_reports(
                             )
                             ws.cell(row=row_idx, column=8, value=round(padm1, 2))
                             ws.cell(row=row_idx, column=9, value=round(padm2, 2))
+
+                            # ── Nq (col 11) et Nγ (col 12) ──
+                            nq_val = calculer_nq(
+                                methode=methode_portance,
+                                phiu_deg=phi_u,
+                                phip_deg=phi_prime,
+                                q0_kgcm2=q0_val,
+                            )
+                            ng_val = calculer_ng(
+                                methode=methode_portance,
+                                phiu_deg=phi_u,
+                            )
+                            ws.cell(row=row_idx, column=11, value=round(nq_val, 2))
+                            ws.cell(row=row_idx, column=12, value=round(ng_val, 2))
             else:
                 machine_name = essai.get("machine", "").strip()
                 if not machine_name:
