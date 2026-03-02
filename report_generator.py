@@ -1253,8 +1253,8 @@ def generate_pdf_report(
 
     # ── Dimensions de page ──
     PAGE_W, PAGE_H = A4
-    LEFT_MARGIN = 15 * mm
-    RIGHT_MARGIN = 15 * mm
+    LEFT_MARGIN = 10 * mm
+    RIGHT_MARGIN = 10 * mm
     TOP_MARGIN = 14 * mm
     BOTTOM_MARGIN = 10 * mm
     TABLE_WIDTH = PAGE_W - LEFT_MARGIN - RIGHT_MARGIN
@@ -1518,7 +1518,7 @@ def generate_pdf_report(
             # ── Dimensions du diagramme ──
             diagram_top_y = header_end_y - 8
             diagram_bottom_y = (
-                BOTTOM_MARGIN + FOOTER_BOX_HEIGHT + 35 * mm
+                BOTTOM_MARGIN + FOOTER_BOX_HEIGHT + 10 * mm
             )
             diagram_width_pt = TABLE_WIDTH
             diagram_height_pt = diagram_top_y - diagram_bottom_y
@@ -1531,9 +1531,15 @@ def generate_pdf_report(
                     show_titles=False,
                     plot_pair=_plot_pair,
                     resample_interval=0.20,
-                    figure_dpi=300,
+                    figure_dpi=150,
                     figure_width=diagram_w_in,
                     figure_height=diagram_h_in,
+                    #adjust_left=0.04,    # Réduit la marge gauche au strict nécessaire pour les labels
+                    #adjust_right=0.95,   # Étire le graphique presque jusqu'au bord droit
+                    #adjust_top=0.92,     # Réduit l'espace vide en haut (puisqu'il n'y a pas de titre)
+                    #adjust_bottom=0.05,   # Réduit l'espace vide en bas
+                    qc_color="black",
+                    qst_color="black"
                 )
 
                 try:
@@ -1544,9 +1550,15 @@ def generate_pdf_report(
                     plot_config_nr = CPTPlotConfig(
                         show_titles=False,
                         plot_pair=_plot_pair,
-                        figure_dpi=300,
+                        figure_dpi=150,
                         figure_width=diagram_w_in,
                         figure_height=diagram_h_in,
+                        #adjust_left=0.04,    # Réduit la marge gauche au strict nécessaire pour les labels
+                        #adjust_right=0.95,   # Étire le graphique presque jusqu'au bord droit
+                        #adjust_top=0.92,     # Réduit l'espace vide en haut (puisqu'il n'y a pas de titre)
+                        #adjust_bottom=0.05,   # Réduit l'espace vide en bas
+                        qc_color="black",
+                        qst_color="black"
                     )
                     try:
                         fig_diag, _ax1, _ax2 = plot_cpt(
