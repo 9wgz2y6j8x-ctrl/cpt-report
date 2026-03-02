@@ -523,9 +523,36 @@ class CPTCleaningView(ctk.CTkFrame):
         self.ax_qst = self.fig.add_subplot(111)
         self.ax_qc = self.ax_qst.twiny()
 
+        self._chart_aspect_ratio = cfg.figure_width / cfg.figure_height
+
         self.canvas = FigureCanvasTkAgg(self.fig, master=chart_frame)
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=8)
+        self._chart_widget = self.canvas.get_tk_widget()
+        self._chart_widget.place(x=0, y=0, width=0, height=0)
+
+        chart_frame.bind("<Configure>", self._on_chart_frame_resize)
+
+    # -------------------------------------------------- chart resize
+
+    def _on_chart_frame_resize(self, event):
+        """Resize the chart canvas while maintaining the original aspect ratio."""
+        pad = 8
+        available_w = event.width - 2 * pad
+        available_h = event.height - 2 * pad
+        if available_w <= 0 or available_h <= 0:
+            return
+
+        ratio = self._chart_aspect_ratio
+        if available_w / available_h > ratio:
+            canvas_h = available_h
+            canvas_w = int(canvas_h * ratio)
+        else:
+            canvas_w = available_w
+            canvas_h = int(canvas_w / ratio)
+
+        x = pad + (available_w - canvas_w) // 2
+        y = pad + (available_h - canvas_h) // 2
+        self._chart_widget.place(x=x, y=y, width=canvas_w, height=canvas_h)
 
     # --------------------------------------------------------- bindings
 
