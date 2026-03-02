@@ -31,6 +31,7 @@ import math
 import logging
 from typing import List, Dict, Any, Optional, Callable
 
+import io
 import numpy as np
 import pandas as pd
 from openpyxl import Workbook
@@ -38,7 +39,7 @@ from openpyxl.styles import Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
 from tabular_reader import load_cpt_dataframe
-from cpt_plot import CPTPlotConfig, _resolve_column_name
+from cpt_plot import CPTPlotConfig, _resolve_column_name, plot_cpt
 from cpt_correction import (
     ParamsAppareilCPT,
     calculer_qc_corrige,
@@ -1170,6 +1171,30 @@ def _format_date_for_pdf(date_str: str) -> str:
     return date_str
 
 
+def _render_figure_to_image(fig, dpi=300):
+    """Rend une figure matplotlib en image PNG en memoire.
+
+    Parametres
+    ----------
+    fig : matplotlib.figure.Figure
+        Figure a rendre.
+    dpi : int
+        Resolution en points par pouce.
+
+    Retours
+    -------
+    io.BytesIO
+        Buffer contenant l'image PNG.
+    """
+    import matplotlib.pyplot as plt
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', dpi=dpi, facecolor='white', edgecolor='none')
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+
 def generate_pdf_report(
     essais: List[Dict[str, Any]],
     settings_manager,
@@ -1208,6 +1233,7 @@ def generate_pdf_report(
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
     from reportlab.lib.colors import black
+    from reportlab.lib.utils import ImageReader
     from reportlab.pdfgen import canvas
     from reportlab.pdfbase import pdfmetrics as pm
 
@@ -1285,9 +1311,12 @@ def generate_pdf_report(
         job = essai.get("job", "").strip() or "Sans dossier"
         groups.setdefault(job, []).append(essai)
 
-    total_essais = len(essais)
+    total_essais = len(essais) * 2  # Pages diagrammes + pages tableaux
     current = 0
     generated_files: Dict[str, str] = {}
+
+    # Paire d'unites graphique pour les diagrammes
+    _plot_pair = settings_manager.get("unites", "paire_graphique") or "MPa_kN"
 
     for job_number, job_essais in groups.items():
         safe_job = re.sub(r'[<>:"/\\|?*]', '_', job_number)
@@ -1298,6 +1327,259 @@ def generate_pdf_report(
         c = canvas.Canvas(filepath, pagesize=A4)
         c.setTitle("CPT Report - Sondage au Pénétromètre Statique")
 
+        # ══════════════════════════════════════════════════════════════
+        # Pages diagrammes (une page par essai, au debut du PDF)
+        # ══════════════════════════════════════════════════════════════
+        for essai in job_essais:
+            current += 1
+            test_name = essai.get("test", "").strip() or "Essai"
+
+            if progress_callback:
+                progress_callback(
+                    current, total_essais,
+                    f"Diagramme {job_number} - {test_name}"
+                )
+
+            file_path_diag = essai.get("file_path", "")
+            file_data_diag = None
+            if raw_data_manager:
+                file_data_diag = raw_data_manager.get_file(file_path_diag)
+            if file_data_diag is None:
+                file_data_diag = {"file_path": file_path_diag}
+
+            # Charger les donnees (filtrees si disponibles, brutes sinon)
+            df_diag = _get_dataframe_for_essai(
+                file_path_diag, file_data_diag, cleaning_entries,
+            )
+
+            if df_diag is None:
+                c.showPage()
+                continue
+
+            # Resoudre les colonnes
+            cfg_diag = CPTPlotConfig()
+            try:
+                col_qc_diag = _resolve_column_name(
+                    df_diag, cfg_diag.col_qc, "col_qc"
+                )
+                col_qst_diag = _resolve_column_name(
+                    df_diag, cfg_diag.col_qst, "col_qst"
+                )
+            except Exception:
+                c.showPage()
+                continue
+
+            # Convertir les unites pour le graphique
+            unit_qc_diag = "MPa"
+            unit_qst_diag = "kN"
+            if raw_data_manager:
+                unit_qc_diag = raw_data_manager.get_unit(
+                    file_path_diag, "unit_qc"
+                )
+                unit_qst_diag = raw_data_manager.get_unit(
+                    file_path_diag, "unit_qst"
+                )
+
+            tip_area_diag = (
+                settings_manager.get("unites", "tip_area_cm2") or 10.0
+            )
+
+            df_plot = df_diag.copy()
+            qc_int = qc_to_internal(
+                df_diag[col_qc_diag].values, unit_qc_diag, tip_area_diag,
+            )
+            qst_int = qst_to_internal(
+                df_diag[col_qst_diag].values, unit_qst_diag,
+            )
+            qc_plt, qst_plt, _, _ = internal_to_plot(
+                qc_int, qst_int, _plot_pair, tip_area_diag,
+            )
+            df_plot[col_qc_diag] = qc_plt
+            df_plot[col_qst_diag] = qst_plt
+
+            # ── En-tete (identique aux pages tableaux) ──
+            location = essai.get("location", "").strip()
+            street = essai.get("street", "").strip()
+            test_id = essai.get("test", "").strip()
+            dossier = essai.get("job", "").strip()
+            date_str = _format_date_for_pdf(essai.get("date", ""))
+
+            prof_atteinte = essai.get("prof_atteinte")
+            prof_atteinte_str = (
+                f"{prof_atteinte:.2f} m".replace(".", ",")
+                if prof_atteinte is not None else ""
+            )
+
+            cote_depart_val = (cotes or {}).get(file_path_diag, 0.0)
+            cote_depart_str = f"{cote_depart_val:.2f} m".replace(".", ",")
+
+            top_y = PAGE_H - TOP_MARGIN
+            y = top_y
+
+            c.setFont(font_bold, FONT_SIZE_TITLE)
+            c.drawString(LABELS_LEFT, y, location.upper() if location else "")
+            y -= 14
+
+            c.setFont(font_bold, FONT_SIZE_SUBTITLE)
+            c.drawString(LABELS_LEFT, y, street)
+            y -= 18
+
+            c.setFont(font_bold, FONT_SIZE_TEST_TYPE)
+            test_type_text = "SONDAGE AU PENETROMETRE STATIQUE"
+            c.drawString(LABELS_LEFT, y, test_type_text)
+            type_w = pm.stringWidth(
+                test_type_text, font_bold, FONT_SIZE_TEST_TYPE,
+            )
+            c.setFont(font_bold, 13)
+            c.drawString(LABELS_LEFT + type_w + 15, y, test_id)
+            y -= 13
+
+            c.setFont(font_normal, FONT_SIZE_SMALL)
+            c.drawString(LABELS_LEFT, y, company_line1)
+            y -= 8
+            c.drawString(LABELS_LEFT, y, company_line2)
+            y -= 8
+
+            # Logo
+            text_visual_top = top_y + FONT_SIZE_TITLE * 0.75
+            text_visual_bottom = (
+                top_y - 17 - 18 - FONT_SIZE_TEST_TYPE * 0.25
+            )
+            text_center_y = (text_visual_top + text_visual_bottom) / 2
+
+            if logo_path:
+                logo_y = (
+                    text_center_y - LOGO_HEIGHT_PX / 2 + LOGO_V_OFFSET
+                )
+                try:
+                    c.drawImage(
+                        logo_path, LOGO_LEFT, logo_y,
+                        width=LOGO_WIDTH_PX, height=LOGO_HEIGHT_PX,
+                        preserveAspectRatio=True, anchor='sw',
+                        mask='auto',
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "Impossible de charger le logo PDF: %s", e,
+                    )
+
+            # Bloc metadonnees (droite)
+            meta_y = top_y + 2
+            for label, value, dy in [
+                ("Dossier:", dossier, 0),
+                ("Date:", date_str, -13),
+                ("Prof. Atteinte:", prof_atteinte_str, -18),
+                ("Cote de départ:", cote_depart_str, -13),
+            ]:
+                meta_y += dy
+                c.setFont(font_normal, FONT_SIZE_META)
+                c.drawString(META_X_LABEL, meta_y, label)
+                c.setFont(font_bold, FONT_SIZE_META)
+                c.drawRightString(META_X_VALUE, meta_y, value)
+
+            header_end_y = y
+
+            # ── Pied de page (identique aux pages tableaux) ──
+            c.setStrokeColor(black)
+            c.setLineWidth(0.8)
+            c.rect(
+                LEFT_MARGIN, BOTTOM_MARGIN, TABLE_WIDTH,
+                FOOTER_BOX_HEIGHT, stroke=1, fill=0,
+            )
+
+            ftr_y = BOTTOM_MARGIN + FOOTER_BOX_HEIGHT - 13
+            _pdf_draw_footer_line_with_m3(
+                c, LEFT_MARGIN + 5, ftr_y,
+                f"Masse volumique du sol saturé: {int(rho_sat)} ",
+                font_normal, FONT_SIZE_FOOTER,
+            )
+
+            ftr_y -= 12
+            _pdf_draw_footer_line_with_m3(
+                c, LEFT_MARGIN + 5, ftr_y,
+                f"Masse volumique du sol: {int(rho_sec)} ",
+                font_normal, FONT_SIZE_FOOTER,
+            )
+
+            ftr_y -= 12
+            ftr_frags = [
+                ("P", "bold"),
+                ("adm,B", "sub"),
+                (f" = pression admissible sous une semelle de B cm "
+                 f"de largeur (avec un coefficient de sécurité égal "
+                 f"à {int(coeff_securite)})",
+                 "normal"),
+            ]
+            _pdf_draw_text_with_sub_super(
+                c, LEFT_MARGIN + 5, ftr_y, ftr_frags, font_normal,
+                FONT_SIZE_FOOTER, "left", TABLE_WIDTH,
+            )
+
+            # ── Dimensions du diagramme ──
+            diagram_top_y = header_end_y - 8
+            diagram_bottom_y = (
+                BOTTOM_MARGIN + FOOTER_BOX_HEIGHT + 35 * mm
+            )
+            diagram_width_pt = TABLE_WIDTH
+            diagram_height_pt = diagram_top_y - diagram_bottom_y
+
+            if diagram_height_pt > 0:
+                diagram_w_in = diagram_width_pt / 72.0
+                diagram_h_in = diagram_height_pt / 72.0
+
+                plot_config = CPTPlotConfig(
+                    show_titles=False,
+                    plot_pair=_plot_pair,
+                    resample_interval=0.20,
+                    figure_dpi=300,
+                    figure_width=diagram_w_in,
+                    figure_height=diagram_h_in,
+                )
+
+                try:
+                    fig_diag, _ax1, _ax2 = plot_cpt(df_plot, plot_config)
+                except ValueError:
+                    # Fallback sans reechantillonnage si le pas des
+                    # donnees ne le permet pas
+                    plot_config_nr = CPTPlotConfig(
+                        show_titles=False,
+                        plot_pair=_plot_pair,
+                        figure_dpi=300,
+                        figure_width=diagram_w_in,
+                        figure_height=diagram_h_in,
+                    )
+                    try:
+                        fig_diag, _ax1, _ax2 = plot_cpt(
+                            df_plot, plot_config_nr,
+                        )
+                    except Exception as exc:
+                        logger.error(
+                            "Erreur diagramme (fallback) %s: %s",
+                            file_path_diag, exc,
+                        )
+                        c.showPage()
+                        continue
+
+                try:
+                    img_data = _render_figure_to_image(fig_diag, dpi=300)
+                    img_reader = ImageReader(img_data)
+                    c.drawImage(
+                        img_reader, LEFT_MARGIN, diagram_bottom_y,
+                        width=diagram_width_pt,
+                        height=diagram_height_pt,
+                        preserveAspectRatio=True, anchor='sw',
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "Erreur rendu diagramme %s: %s",
+                        file_path_diag, exc,
+                    )
+
+            c.showPage()
+
+        # ══════════════════════════════════════════════════════════════
+        # Pages tableaux (une ou plusieurs pages par essai)
+        # ══════════════════════════════════════════════════════════════
         for essai_idx, essai in enumerate(job_essais):
             current += 1
             test_name = essai.get("test", "").strip() or "Essai"
