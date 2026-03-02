@@ -35,8 +35,8 @@ class CPTPlotConfig:
     show_annotations: bool = True
     qc_annotation_threshold: Optional[float] = None  # None = use qc_max
     annotation_interval: float = 0.2
-    annotation_fontsize: int = 6
-    annotation_format: str = '.1f'
+    annotation_fontsize: int = 5
+    annotation_format: str = '.0f'
 
     # 5. Configuration des labels et titres
     xlabel_qc: Optional[str] = None   # None = derive de plot_pair
@@ -45,19 +45,19 @@ class CPTPlotConfig:
     title_main: str = 'SONDAGE AU PENETROMETRE STATIQUE (CPT)'
     show_titles: bool = True
     label_fontsize: int = 9
-    title_fontsize: int = 10
+    title_fontsize: int = 11
     tick_label_fontsize: int = 8
 
     # 6. Configuration de la figure
     figure_width: float = 10.0
-    figure_height: float = 12.0
+    figure_height: float = 14.0
     figure_dpi: int = 200
 
     # 7. Configuration des marges et layout
-    adjust_right: float = 0.85
-    adjust_top: float = 0.90
-    adjust_bottom: float = 0.10
-    adjust_left: float = 0.12
+    adjust_right: float = 0.975
+    adjust_top: float = 0.92
+    adjust_bottom: float = 0.05
+    adjust_left: float = 0.025
 
     # 8. Watermark
     watermark_text: Optional[str] = None
@@ -331,13 +331,32 @@ def plot_cpt(df: pd.DataFrame, config: CPTPlotConfig = None) -> tuple:
     ax1.tick_params(axis='y', which='major', labelsize=config.tick_label_fontsize)
     ax2.tick_params(axis='x', which='major', labelsize=config.tick_label_fontsize)
 
+    # Applique le style 'light' à tous les labels de l'axe X du bas (qst)
+    for label in ax1.get_xticklabels():
+        label.set_fontweight('light')
+
     # Labels des axes
-    ax1.set_xlabel(config.xlabel_qst, fontweight='light',
-                   fontsize=config.label_fontsize, labelpad=5)
-    ax2.set_xlabel(config.xlabel_qc, fontweight='light',
-                   fontsize=config.label_fontsize, labelpad=5)
+    # Placer le label Qst (axe du bas)
+    # y = -0.02 (coordonnées des axes) le place très près de la ligne du bas
+    # Transform=ax1.transAxes permet d'utiliser des coordonnées relatives (0 à 1)
+    ax1.text(0.41, -0.013, config.xlabel_qst, 
+             fontweight='light', 
+             fontsize=config.label_fontsize,
+             ha='left', va='top', 
+             transform=ax1.transAxes)
+
+    # Placer le label qc (axe du haut)
+    # y = 1.02 le place très près de la ligne du haut
+    ax2.text(0.41, 1.017, config.xlabel_qc, 
+             fontweight='semibold', 
+             fontsize=config.label_fontsize,
+             ha='left', va='bottom', 
+             transform=ax2.transAxes)
+
+                   
     ax1.set_ylabel(config.ylabel, fontweight='light',
-                   fontsize=config.label_fontsize, labelpad=5)
+                   fontsize=config.label_fontsize, labelpad=1)
+
 
     # Set X-axis limits
     ax1.set_xlim(0, config.qst_max)
@@ -365,7 +384,7 @@ def plot_cpt(df: pd.DataFrame, config: CPTPlotConfig = None) -> tuple:
                     ax2.annotate(value_str,
                                 (config.qc_max, current_depth),
                                 textcoords="offset points",
-                                xytext=(5, 0),
+                                xytext=(1, 0),
                                 ha='left', va='center',
                                 fontsize=config.annotation_fontsize,
                                 color='black',
