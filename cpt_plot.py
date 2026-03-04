@@ -54,10 +54,10 @@ class CPTPlotConfig:
     figure_dpi: int = 200
 
     # 7. Configuration des marges et layout
-    adjust_right: float = 0.975
+    adjust_right: float = 0.97
     adjust_top: float = 0.92
     adjust_bottom: float = 0.05
-    adjust_left: float = 0.025
+    adjust_left: float = 0.03
 
     # 8. Watermark
     watermark_text: Optional[str] = None
