@@ -1247,9 +1247,18 @@ def _draw_diagram_footer(c, left_margin, bottom_margin, table_width,
     c.drawCentredString(col2_x + fc_w / 2, r2_y + PAD,
                         _fmt_obs("Eboulement", "fin_chantier"))
 
-    # ── Partie droite : infos machine ──
-    right_x = mid_x + 5
-    right_center_y = legend_top_y + (DIAG_FOOTER_HEIGHT - LEGEND_H) / 2
+    # ── Partie droite : Matériel ──
+    right_x = mid_x + PAD
+    right_w = table_width - obs_table_w
+
+    # Titre : "Matériel"
+    c.setFont(font_bold, FS_TITLE)
+    mat_title = "Matériel"
+    mat_tw = pm.stringWidth(mat_title, font_bold, FS_TITLE)
+    c.drawString(mid_x + (right_w - mat_tw) / 2, title_y + PAD, mat_title)
+
+    # Ligne horizontale sous le titre "Matériel"
+    c.line(mid_x, title_y, left_margin + table_width, title_y)
 
     # Capacité de l'appareil hydraulique
     machine_name = essai.get("machine", "").strip()
@@ -1267,10 +1276,15 @@ def _draw_diagram_footer(c, left_margin, bottom_margin, table_width,
     section = essai.get("section", "Grande")
     section_pointe_str = "10" if section == "Grande" else "6,6"
 
+    # Centrer verticalement les deux lignes dans l'espace sous le titre
+    info_zone_top = title_y
+    info_zone_bot = legend_top_y
+    info_zone_mid = info_zone_bot + (info_zone_top - info_zone_bot) / 2
+
     c.setFont(font_normal, FS)
-    c.drawString(right_x, right_center_y + 5,
+    c.drawString(right_x, info_zone_mid + 5,
                  f"Capacité de l'appareil hydraulique : {capacite_str} t")
-    c.drawString(right_x, right_center_y - 8,
+    c.drawString(right_x, info_zone_mid - 8,
                  f"Section de la pointe : {section_pointe_str} cm\u00B2")
 
     # ── Légende ──
@@ -1280,37 +1294,19 @@ def _draw_diagram_footer(c, left_margin, bottom_margin, table_width,
     c.drawString(left_margin + PAD, leg_y, lbl)
     lx = left_margin + PAD + pm.stringWidth(lbl, font_bold, FS_LEGEND)
 
-    # Trait plein pour qc
-    c.saveState()
-    c.setLineWidth(1.2)
-    c.setStrokeColor(black)
-    c.line(lx, leg_y + 3, lx + 18, leg_y + 3)
-    c.restoreState()
-    lx += 21
-
-    # Unités selon la paire graphique
-    if plot_pair == "kg/cm2_kg":
-        u_qc, u_qst = "kg/cm\u00B2", "kg"
-    else:
-        u_qc, u_qst = "MPa", "kN"
+    LEGEND_ITEM_GAP = 15
 
     c.setFont(font_normal, FS_LEGEND)
-    qc_txt = f"qc = résistance à la pénétration de la pointe [{u_qc}]"
-    c.drawString(lx, leg_y, qc_txt)
-    lx += pm.stringWidth(qc_txt, font_normal, FS_LEGEND) + 15
+    item1 = "c = coefficient de cohésion"
+    c.drawString(lx, leg_y, item1)
+    lx += pm.stringWidth(item1, font_normal, FS_LEGEND) + LEGEND_ITEM_GAP
 
-    # Trait pointillé pour Qst
-    c.saveState()
-    c.setLineWidth(1.2)
-    c.setStrokeColor(black)
-    c.setDash(3, 3)
-    c.line(lx, leg_y + 3, lx + 18, leg_y + 3)
-    c.restoreState()
-    lx += 21
+    item2 = "E = module pressiométrique"
+    c.drawString(lx, leg_y, item2)
+    lx += pm.stringWidth(item2, font_normal, FS_LEGEND) + LEGEND_ITEM_GAP
 
-    qst_txt = f"Qst = frottement latéral total [{u_qst}]"
-    c.setFont(font_normal, FS_LEGEND)
-    c.drawString(lx, leg_y, qst_txt)
+    item3 = "TRF = classe de sol"
+    c.drawString(lx, leg_y, item3)
 
     return DIAG_FOOTER_HEIGHT
 
