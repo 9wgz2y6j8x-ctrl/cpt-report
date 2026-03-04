@@ -1157,12 +1157,13 @@ def _draw_diagram_footer(c, left_margin, bottom_margin, table_width,
     """
     from reportlab.lib.colors import black
     from reportlab.pdfbase import pdfmetrics as pm
+    from reportlab.lib.units import mm 
 
     # ── Constantes de dimensionnement ──
     FS = 7.5            # police contenu
     FS_LABEL = 8        # police titres de section (Légende, Matériel utilisé)
     LINE_H = 7.6         # hauteur d'une ligne de texte
-    PAD = 3             # padding intérieur
+    PAD = 2            # padding intérieur
     SECTION_GAP = 3     # espace vertical entre les deux sections du bloc gauche
 
     # Proportions gauche / droite
@@ -1184,6 +1185,8 @@ def _draw_diagram_footer(c, left_margin, bottom_margin, table_width,
     footer_top_y = bottom_margin + DIAG_FOOTER_HEIGHT
     tbl_x = left_margin + left_w + GAP_BETWEEN
     tbl_w = table_width - left_w - GAP_BETWEEN
+    # Décalage vertical du tableau : positif = vers le bas, négatif = vers le haut
+    OBS_TABLE_V_OFFSET = 2.8 * mm   # X mm vers le bas (changer le signe pour remonter)
 
     # ── BLOC GAUCHE ──
     cur_y = footer_top_y  # curseur vertical (descend)
@@ -1299,7 +1302,7 @@ def _draw_diagram_footer(c, left_margin, bottom_margin, table_width,
     col3_x = tbl_x + col1_w + col2_w
 
     # Le tableau est aligné en haut par rapport au bloc gauche
-    tbl_top_y = footer_top_y
+    tbl_top_y = footer_top_y - OBS_TABLE_V_OFFSET
 
     # Dessiner le cadre extérieur du tableau
     c.rect(tbl_x, tbl_top_y - tbl_h, tbl_w, tbl_h, stroke=1, fill=0)
@@ -1335,7 +1338,7 @@ def _draw_diagram_footer(c, left_margin, bottom_margin, table_width,
     c.drawCentredString(col3_x + col3_w / 2, hdr_line2_y, "fin de chantier [m]")
 
     # ── Ligne de données 1 : Niveau d'eau ──
-    r1_text_y = hdr_bottom_y - ROW_H + PAD
+    r1_text_y = hdr_bottom_y - ROW_H + PAD + (ROW_H - FS) / 2   # ← centrage vertical
     c.setFont(font_normal, FS)
     c.drawString(col1_x + PAD, r1_text_y, "Niveau d'eau")
     c.drawCentredString(col2_x + col2_w / 2, r1_text_y,
@@ -1344,7 +1347,7 @@ def _draw_diagram_footer(c, left_margin, bottom_margin, table_width,
                         _fmt_obs("Niveau d'eau", "fin_chantier"))
 
     # ── Ligne de données 2 : Eboulement ──
-    r2_text_y = r1_bottom_y - ROW_H + PAD
+    r2_text_y = r1_bottom_y - ROW_H + PAD + (ROW_H - FS) / 2    # ← centrage vertica
     c.drawString(col1_x + PAD, r2_text_y, "Eboulement")
     c.drawCentredString(col2_x + col2_w / 2, r2_text_y,
                         _fmt_obs("Eboulement", "fin_essai"))
