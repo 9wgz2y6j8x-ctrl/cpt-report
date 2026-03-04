@@ -302,8 +302,8 @@ def get_resource_path(relative_path):
 class AppModel:
     def __init__(self):
         # Informations sur le logiciel
-        self.software_name = "CPT REPORT Lite"
-        self.software_version = "v0.2"
+        self.software_name = "CPT REPORT"
+        self.software_version = "v1.0"
         self.splash_screen_delay = 3000  # en millisecondes
 
         # Liste des messages du splash screen
