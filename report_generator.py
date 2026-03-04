@@ -1144,6 +1144,177 @@ def _pdf_draw_footer_line_with_m3(c, x, y, prefix, font_name, font_size):
     c.drawString(x + w, y, "]")
 
 
+def _draw_diagram_footer(c, left_margin, bottom_margin, table_width,
+                         font_normal, font_bold, observations, file_path,
+                         essai, settings_manager, plot_pair):
+    """Dessine le pied de page des pages diagrammes avec observations, info machine et légende.
+
+    Retourne la hauteur totale du bloc pied de page (en pts).
+    """
+    from reportlab.lib.colors import black
+    from reportlab.pdfbase import pdfmetrics as pm
+
+    DIAG_FOOTER_HEIGHT = 72
+    FS = 7.5          # taille police pour le contenu du tableau
+    FS_TITLE = 8      # taille police titre
+    FS_LEGEND = 7.5   # taille police légende
+    ROW_H = 11        # hauteur d'une ligne de tableau
+    LEGEND_H = 13     # hauteur de la zone légende
+    PAD = 3           # padding intérieur
+
+    # ── Boîte extérieure ──
+    c.setStrokeColor(black)
+    c.setLineWidth(0.8)
+    c.rect(left_margin, bottom_margin, table_width, DIAG_FOOTER_HEIGHT,
+           stroke=1, fill=0)
+
+    # Séparation horizontale entre zone tableau et légende
+    legend_top_y = bottom_margin + LEGEND_H
+    c.line(left_margin, legend_top_y, left_margin + table_width, legend_top_y)
+
+    # ── Partie gauche : tableau Observations dans le trou ──
+    obs_table_w = table_width * 0.55
+    mid_x = left_margin + obs_table_w
+
+    # Séparation verticale entre gauche et droite
+    c.line(mid_x, legend_top_y, mid_x, bottom_margin + DIAG_FOOTER_HEIGHT)
+
+    # Récupérer les données d'observation
+    obs_store = None
+    if observations and file_path in observations:
+        obs_store = observations[file_path]
+
+    def _fmt_obs(row_key, col_key):
+        if obs_store is None:
+            return "-"
+        val_str = (obs_store.get("hole_obs", {})
+                   .get(row_key, {})
+                   .get(col_key, "").strip())
+        if not val_str or val_str == "-":
+            return "-"
+        try:
+            return f"{float(val_str.replace(',', '.')):.2f}".replace(".", ",")
+        except (ValueError, TypeError):
+            return val_str
+
+    # Colonnes du tableau
+    label_w = obs_table_w * 0.38
+    fe_w = obs_table_w * 0.31
+    fc_w = obs_table_w * 0.31
+    col1_x = left_margin + label_w
+    col2_x = col1_x + fe_w
+
+    # Lignes verticales internes du tableau
+    c.line(col1_x, legend_top_y, col1_x, bottom_margin + DIAG_FOOTER_HEIGHT - ROW_H)
+    c.line(col2_x, legend_top_y, col2_x, bottom_margin + DIAG_FOOTER_HEIGHT - ROW_H)
+
+    # Titre : "Observations dans le trou"
+    title_y = bottom_margin + DIAG_FOOTER_HEIGHT - ROW_H
+    c.setFont(font_bold, FS_TITLE)
+    title_text = "Observations dans le trou"
+    tw = pm.stringWidth(title_text, font_bold, FS_TITLE)
+    c.drawString(left_margin + (obs_table_w - tw) / 2, title_y + PAD, title_text)
+
+    # Ligne horizontale sous le titre
+    c.line(left_margin, title_y, mid_x, title_y)
+
+    # En-tête colonnes
+    hdr_y = title_y - ROW_H
+    c.setFont(font_bold, FS)
+    c.drawCentredString(col1_x + fe_w / 2, hdr_y + PAD, "Fin d'essai")
+    c.drawCentredString(col2_x + fc_w / 2, hdr_y + PAD, "Fin de chantier")
+
+    # Ligne horizontale sous l'en-tête
+    c.line(left_margin, hdr_y, mid_x, hdr_y)
+
+    # Ligne 1 : Niveau d'eau
+    r1_y = hdr_y - ROW_H
+    c.setFont(font_normal, FS)
+    c.drawString(left_margin + PAD, r1_y + PAD, "Niveau d'eau (m)")
+    c.drawCentredString(col1_x + fe_w / 2, r1_y + PAD,
+                        _fmt_obs("Niveau d'eau", "fin_essai"))
+    c.drawCentredString(col2_x + fc_w / 2, r1_y + PAD,
+                        _fmt_obs("Niveau d'eau", "fin_chantier"))
+
+    # Ligne horizontale entre les deux lignes de données
+    c.line(left_margin, r1_y, mid_x, r1_y)
+
+    # Ligne 2 : Éboulement
+    r2_y = r1_y - ROW_H
+    c.drawString(left_margin + PAD, r2_y + PAD, "Eboulement (m)")
+    c.drawCentredString(col1_x + fe_w / 2, r2_y + PAD,
+                        _fmt_obs("Eboulement", "fin_essai"))
+    c.drawCentredString(col2_x + fc_w / 2, r2_y + PAD,
+                        _fmt_obs("Eboulement", "fin_chantier"))
+
+    # ── Partie droite : infos machine ──
+    right_x = mid_x + 5
+    right_center_y = legend_top_y + (DIAG_FOOTER_HEIGHT - LEGEND_H) / 2
+
+    # Capacité de l'appareil hydraulique
+    machine_name = essai.get("machine", "").strip()
+    capacite_str = "-"
+    if machine_name:
+        machines = settings_manager.get_machines()
+        machine_cfg = next(
+            (m for m in machines if m.get("nom") == machine_name), None)
+        if machine_cfg:
+            cap = machine_cfg.get("capacite_tonnes", 0)
+            capacite_str = (f"{int(cap)}" if cap == int(cap)
+                            else f"{cap}")
+
+    # Section de la pointe
+    section = essai.get("section", "Grande")
+    section_pointe_str = "10" if section == "Grande" else "6,6"
+
+    c.setFont(font_normal, FS)
+    c.drawString(right_x, right_center_y + 5,
+                 f"Capacité de l'appareil hydraulique : {capacite_str} t")
+    c.drawString(right_x, right_center_y - 8,
+                 f"Section de la pointe : {section_pointe_str} cm\u00B2")
+
+    # ── Légende ──
+    leg_y = bottom_margin + PAD
+    c.setFont(font_bold, FS_LEGEND)
+    lbl = "Légende :  "
+    c.drawString(left_margin + PAD, leg_y, lbl)
+    lx = left_margin + PAD + pm.stringWidth(lbl, font_bold, FS_LEGEND)
+
+    # Trait plein pour qc
+    c.saveState()
+    c.setLineWidth(1.2)
+    c.setStrokeColor(black)
+    c.line(lx, leg_y + 3, lx + 18, leg_y + 3)
+    c.restoreState()
+    lx += 21
+
+    # Unités selon la paire graphique
+    if plot_pair == "kg/cm2_kg":
+        u_qc, u_qst = "kg/cm\u00B2", "kg"
+    else:
+        u_qc, u_qst = "MPa", "kN"
+
+    c.setFont(font_normal, FS_LEGEND)
+    qc_txt = f"qc = résistance à la pénétration de la pointe [{u_qc}]"
+    c.drawString(lx, leg_y, qc_txt)
+    lx += pm.stringWidth(qc_txt, font_normal, FS_LEGEND) + 15
+
+    # Trait pointillé pour Qst
+    c.saveState()
+    c.setLineWidth(1.2)
+    c.setStrokeColor(black)
+    c.setDash(3, 3)
+    c.line(lx, leg_y + 3, lx + 18, leg_y + 3)
+    c.restoreState()
+    lx += 21
+
+    qst_txt = f"Qst = frottement latéral total [{u_qst}]"
+    c.setFont(font_normal, FS_LEGEND)
+    c.drawString(lx, leg_y, qst_txt)
+
+    return DIAG_FOOTER_HEIGHT
+
+
 def _format_date_for_pdf(date_str: str) -> str:
     """Convertit une date en format MM/AAAA pour le rapport PDF.
 
@@ -1469,46 +1640,17 @@ def generate_pdf_report(
 
             header_end_y = y
 
-            # ── Pied de page (identique aux pages tableaux) ──
-            c.setStrokeColor(black)
-            c.setLineWidth(0.8)
-            c.rect(
-                LEFT_MARGIN, BOTTOM_MARGIN, TABLE_WIDTH,
-                FOOTER_BOX_HEIGHT, stroke=1, fill=0,
-            )
-
-            ftr_y = BOTTOM_MARGIN + FOOTER_BOX_HEIGHT - 13
-            _pdf_draw_footer_line_with_m3(
-                c, LEFT_MARGIN + 5, ftr_y,
-                f"Masse volumique du sol saturé: {int(rho_sat)} ",
-                font_normal, FONT_SIZE_FOOTER,
-            )
-
-            ftr_y -= 12
-            _pdf_draw_footer_line_with_m3(
-                c, LEFT_MARGIN + 5, ftr_y,
-                f"Masse volumique du sol: {int(rho_sec)} ",
-                font_normal, FONT_SIZE_FOOTER,
-            )
-
-            ftr_y -= 12
-            ftr_frags = [
-                ("P", "bold"),
-                ("adm,B", "sub"),
-                (f" = pression admissible sous une semelle de B cm "
-                 f"de largeur (avec un coefficient de sécurité égal "
-                 f"à {int(coeff_securite)})",
-                 "normal"),
-            ]
-            _pdf_draw_text_with_sub_super(
-                c, LEFT_MARGIN + 5, ftr_y, ftr_frags, font_normal,
-                FONT_SIZE_FOOTER, "left", TABLE_WIDTH,
+            # ── Pied de page diagramme (observations + machine + légende) ──
+            diag_footer_h = _draw_diagram_footer(
+                c, LEFT_MARGIN, BOTTOM_MARGIN, TABLE_WIDTH,
+                font_normal, font_bold, observations, file_path_diag,
+                essai, settings_manager, _plot_pair,
             )
 
             # ── Dimensions du diagramme ──
             diagram_top_y = header_end_y - 8
             diagram_bottom_y = (
-                BOTTOM_MARGIN + FOOTER_BOX_HEIGHT + 10 * mm
+                BOTTOM_MARGIN + diag_footer_h + 10 * mm
             )
             diagram_width_pt = TABLE_WIDTH
             diagram_height_pt = diagram_top_y - diagram_bottom_y
