@@ -336,8 +336,22 @@ def plot_cpt(df: pd.DataFrame, config: CPTPlotConfig = None) -> tuple:
     # avec les lignes verticales de l'axe
     tick_labels_ax2 = ax2.get_xticklabels()
     if len(tick_labels_ax2) >= 2:
+        from matplotlib.transforms import ScaledTranslation
+        offset_pts = 2 * 72 / 25.4  # 2 mm en points
+        dt_right = ScaledTranslation(
+            offset_pts / 72, 0, fig.dpi_scale_trans,
+        )
+        dt_left = ScaledTranslation(
+            -offset_pts / 72, 0, fig.dpi_scale_trans,
+        )
         tick_labels_ax2[0].set_ha('left')
+        tick_labels_ax2[0].set_transform(
+            tick_labels_ax2[0].get_transform() + dt_right,
+        )
         tick_labels_ax2[-1].set_ha('right')
+        tick_labels_ax2[-1].set_transform(
+            tick_labels_ax2[-1].get_transform() + dt_left,
+        )
 
     # Taille des ticks
     ax1.tick_params(axis='x', which='major', labelsize=config.tick_label_fontsize)
