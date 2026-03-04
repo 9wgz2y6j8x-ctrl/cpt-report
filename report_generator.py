@@ -1597,23 +1597,17 @@ def generate_pdf_report(
 
                     # Titre et identifiant d'essai dans la boîte
                     box_title = "SONDAGE AU PENETROMETRE STATIQUE (CPT)"
-                    box_center_x = (box_x_left + box_x_right) / 2
-                    box_center_y = (box_y_bottom + box_y_top) / 2
-                    text_y = box_center_y - FONT_SIZE_TEST_TYPE * 0.35
+                    title_fs = FONT_SIZE_TEST_TYPE + 1
+                    id_fs = 14
+                    text_x = box_x_left + 5 * mm
+                    text_y = box_y_top - 2 * mm - title_fs
 
-                    c.setFont(font_bold, FONT_SIZE_TEST_TYPE)
+                    c.setFont(font_bold, title_fs)
                     title_w = pm.stringWidth(
-                        box_title, font_bold, FONT_SIZE_TEST_TYPE,
+                        box_title, font_bold, title_fs,
                     )
-                    c.setFont(font_bold, 13)
-                    id_w = pm.stringWidth(test_id, font_bold, 13)
-
-                    total_w = title_w + 15 + id_w
-                    text_x = box_center_x - total_w / 2
-
-                    c.setFont(font_bold, FONT_SIZE_TEST_TYPE)
                     c.drawString(text_x, text_y, box_title)
-                    c.setFont(font_bold, 13)
+                    c.setFont(font_bold, id_fs)
                     c.drawString(text_x + title_w + 15, text_y, test_id)
 
                 except Exception as exc:
