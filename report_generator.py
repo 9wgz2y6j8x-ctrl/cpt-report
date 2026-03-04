@@ -1572,6 +1572,10 @@ def generate_pdf_report(
                         c.showPage()
                         continue
 
+                # Extraction des coordonnées ax2 avant fermeture de la figure
+                ax2_pos = _ax2.get_position()
+                ax2_spine_lw = _ax2.spines['top'].get_linewidth()
+
                 try:
                     img_data = _render_figure_to_image(fig_diag, dpi=300)
                     img_reader = ImageReader(img_data)
@@ -1581,6 +1585,26 @@ def generate_pdf_report(
                         height=diagram_height_pt,
                         preserveAspectRatio=True, anchor='sw',
                     )
+
+                    # Boîte ouverte en bas (3 côtés) au-dessus du diagramme
+                    box_x_left = LEFT_MARGIN + ax2_pos.x0 * diagram_width_pt
+                    box_x_right = LEFT_MARGIN + ax2_pos.x1 * diagram_width_pt
+                    box_y_bottom = (
+                        diagram_bottom_y + ax2_pos.y1 * diagram_height_pt
+                    )
+                    box_y_top = box_y_bottom + 18 * mm
+
+                    c.saveState()
+                    c.setStrokeColor(black)
+                    c.setLineWidth(ax2_spine_lw)
+                    p = c.beginPath()
+                    p.moveTo(box_x_left, box_y_bottom)
+                    p.lineTo(box_x_left, box_y_top)
+                    p.lineTo(box_x_right, box_y_top)
+                    p.lineTo(box_x_right, box_y_bottom)
+                    c.drawPath(p, stroke=1, fill=0)
+                    c.restoreState()
+
                 except Exception as exc:
                     logger.error(
                         "Erreur rendu diagramme %s: %s",
