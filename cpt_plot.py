@@ -27,9 +27,9 @@ class CPTPlotConfig:
 
     # 3. Configuration des courbes (Styles)
     qc_color: str = 'b'
-    qc_linewidth: float = 1.60
+    qc_linewidth: float = 1.55
     qst_color: str = 'orange'
-    qst_linewidth: float = 0.55
+    qst_linewidth: float = 0.35
 
     # 4. Configuration des annotations
     show_annotations: bool = True
