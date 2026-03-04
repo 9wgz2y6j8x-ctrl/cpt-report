@@ -1147,37 +1147,130 @@ def _pdf_draw_footer_line_with_m3(c, x, y, prefix, font_name, font_size):
 def _draw_diagram_footer(c, left_margin, bottom_margin, table_width,
                          font_normal, font_bold, observations, file_path,
                          essai, settings_manager, plot_pair):
-    """Dessine le pied de page des pages diagrammes avec observations, info machine et légende.
+    """Dessine le pied de page des pages diagrammes.
+
+    Layout :
+      Bloc gauche (~60 %) : Légende + Matériel utilisé (texte libre)
+      Bloc droit  (~40 %) : Tableau Observations (3 cols × 3 lignes)
 
     Retourne la hauteur totale du bloc pied de page (en pts).
     """
     from reportlab.lib.colors import black
     from reportlab.pdfbase import pdfmetrics as pm
 
-    DIAG_FOOTER_HEIGHT = 72
-    FS = 7.5          # taille police pour le contenu du tableau
-    FS_TITLE = 8      # taille police titre
-    FS_LEGEND = 7.5   # taille police légende
-    ROW_H = 11        # hauteur d'une ligne de tableau
-    LEGEND_H = 13     # hauteur de la zone légende
-    PAD = 3           # padding intérieur
+    # ── Constantes de dimensionnement ──
+    FS = 7.5            # police contenu
+    FS_LABEL = 8        # police titres de section (Légende, Matériel utilisé)
+    LINE_H = 10         # hauteur d'une ligne de texte
+    PAD = 3             # padding intérieur
+    SECTION_GAP = 6     # espace vertical entre les deux sections du bloc gauche
 
-    # ── Boîte extérieure ──
+    # Proportions gauche / droite
+    LEFT_RATIO = 0.58
+    left_w = table_width * LEFT_RATIO
+    GAP_BETWEEN = 8     # espace blanc entre bloc gauche et tableau droit
+
+    # ── Tableau droit : dimensions ──
+    ROW_H = 13          # hauteur d'une ligne de données
+    HDR_H = 24          # hauteur de l'en-tête (texte sur 2 lignes)
+    tbl_h = HDR_H + ROW_H * 2
+
+    # Hauteur totale du footer = max(bloc gauche, tableau droit)
+    # Bloc gauche : Légende (label + 3 lignes) + gap + Matériel (label + 3 lignes)
+    left_h = (LINE_H + 3 * LINE_H) + SECTION_GAP + (LINE_H + 3 * LINE_H)
+    DIAG_FOOTER_HEIGHT = max(left_h, tbl_h) + 2  # petite marge
+
+    # Coordonnées de base
+    footer_top_y = bottom_margin + DIAG_FOOTER_HEIGHT
+    tbl_x = left_margin + left_w + GAP_BETWEEN
+    tbl_w = table_width - left_w - GAP_BETWEEN
+
+    # ── BLOC GAUCHE ──
+    cur_y = footer_top_y  # curseur vertical (descend)
+
+    # --- Section Légende ---
+    cur_y -= LINE_H
+    c.setFont(font_bold, FS_LABEL)
+    c.drawString(left_margin, cur_y, "Légende :")
+
+    legend_items = [
+        ("c",   "Chocs pendant l'enfoncement"),
+        ("E",   "Extraction partielle des tubes de sondage"),
+        ("TRF", "Sondage poursuivi avec Tube Réducteur de Frottement"),
+    ]
+    desc_x = left_margin + 30  # colonne des descriptions alignées
+    c.setFont(font_normal, FS)
+    for abbr, desc in legend_items:
+        cur_y -= LINE_H
+        c.drawString(left_margin + 4, cur_y, abbr)
+        c.drawString(left_margin + 14, cur_y, "\u2192")
+        c.drawString(desc_x, cur_y, desc)
+
+    # --- Section Matériel utilisé ---
+    cur_y -= SECTION_GAP + LINE_H
+    c.setFont(font_bold, FS_LABEL)
+    c.drawString(left_margin, cur_y, "Matériel utilisé :")
+
+    # Récupérer les données machine
+    machine_name = essai.get("machine", "").strip()
+    capacite_str = "-"
+    if machine_name:
+        machines = settings_manager.get_machines()
+        machine_cfg = next(
+            (m for m in machines if m.get("nom") == machine_name), None)
+        if machine_cfg:
+            cap = machine_cfg.get("capacite_tonnes", 0)
+            capacite_str = (f"{int(cap)}" if cap == int(cap)
+                            else f"{cap}")
+
+    section = essai.get("section", "Grande")
+    section_pointe_cm2 = "10" if section == "Grande" else "6,6"
+    section_type = "M1"
+    section_tubes_cm2 = "10" if section == "Grande" else "6,6"
+
+    # Position X pour les valeurs en gras (alignées à droite de la colonne)
+    val_x = left_margin + left_w - 4
+
+    c.setFont(font_normal, FS)
+    # Ligne 1 : Capacité
+    cur_y -= LINE_H
+    c.drawString(left_margin + 4, cur_y, "Capacité de l'appareil hydraulique [T]")
+    c.setFont(font_bold, FS)
+    c.drawRightString(val_x, cur_y, capacite_str)
+
+    # Ligne 2 : Section de la pointe [cm²] et type
+    cur_y -= LINE_H
+    c.setFont(font_normal, FS)
+    lbl_part1 = "Section de la pointe [cm"
+    c.drawString(left_margin + 4, cur_y, lbl_part1)
+    x_after = left_margin + 4 + pm.stringWidth(lbl_part1, font_normal, FS)
+    # Exposant ²
+    c.setFont(font_normal, FS * 0.7)
+    c.drawString(x_after, cur_y + 2.5, "2")
+    x_after += pm.stringWidth("2", font_normal, FS * 0.7)
+    c.setFont(font_normal, FS)
+    c.drawString(x_after, cur_y, "] et type")
+    # Valeur en gras : "10 M1"
+    c.setFont(font_bold, FS)
+    c.drawRightString(val_x, cur_y, f"{section_pointe_cm2} {section_type}")
+
+    # Ligne 3 : Section des tubes allongés [cm²]
+    cur_y -= LINE_H
+    c.setFont(font_normal, FS)
+    lbl_part1 = "Section des tubes allongés [cm"
+    c.drawString(left_margin + 4, cur_y, lbl_part1)
+    x_after = left_margin + 4 + pm.stringWidth(lbl_part1, font_normal, FS)
+    c.setFont(font_normal, FS * 0.7)
+    c.drawString(x_after, cur_y + 2.5, "2")
+    x_after += pm.stringWidth("2", font_normal, FS * 0.7)
+    c.setFont(font_normal, FS)
+    c.drawString(x_after, cur_y, "]")
+    c.setFont(font_bold, FS)
+    c.drawRightString(val_x, cur_y, section_tubes_cm2)
+
+    # ── BLOC DROIT : Tableau Observations ──
     c.setStrokeColor(black)
-    c.setLineWidth(0.8)
-    c.rect(left_margin, bottom_margin, table_width, DIAG_FOOTER_HEIGHT,
-           stroke=1, fill=0)
-
-    # Séparation horizontale entre zone tableau et légende
-    legend_top_y = bottom_margin + LEGEND_H
-    c.line(left_margin, legend_top_y, left_margin + table_width, legend_top_y)
-
-    # ── Partie gauche : tableau Observations dans le trou ──
-    obs_table_w = table_width * 0.55
-    mid_x = left_margin + obs_table_w
-
-    # Séparation verticale entre gauche et droite
-    c.line(mid_x, legend_top_y, mid_x, bottom_margin + DIAG_FOOTER_HEIGHT)
+    c.setLineWidth(0.5)
 
     # Récupérer les données d'observation
     obs_store = None
@@ -1197,116 +1290,66 @@ def _draw_diagram_footer(c, left_margin, bottom_margin, table_width,
         except (ValueError, TypeError):
             return val_str
 
-    # Colonnes du tableau
-    label_w = obs_table_w * 0.38
-    fe_w = obs_table_w * 0.31
-    fc_w = obs_table_w * 0.31
-    col1_x = left_margin + label_w
-    col2_x = col1_x + fe_w
+    # Colonnes du tableau : col1 (observations), col2 (fin essai), col3 (fin chantier)
+    col1_w = tbl_w * 0.34
+    col2_w = tbl_w * 0.33
+    col3_w = tbl_w * 0.33
+    col1_x = tbl_x
+    col2_x = tbl_x + col1_w
+    col3_x = tbl_x + col1_w + col2_w
 
-    # Lignes verticales internes du tableau
-    c.line(col1_x, legend_top_y, col1_x, bottom_margin + DIAG_FOOTER_HEIGHT - ROW_H)
-    c.line(col2_x, legend_top_y, col2_x, bottom_margin + DIAG_FOOTER_HEIGHT - ROW_H)
+    # Le tableau est aligné en haut par rapport au bloc gauche
+    tbl_top_y = footer_top_y
 
-    # Titre : "Observations dans le trou"
-    title_y = bottom_margin + DIAG_FOOTER_HEIGHT - ROW_H
-    c.setFont(font_bold, FS_TITLE)
-    title_text = "Observations dans le trou"
-    tw = pm.stringWidth(title_text, font_bold, FS_TITLE)
-    c.drawString(left_margin + (obs_table_w - tw) / 2, title_y + PAD, title_text)
+    # Dessiner le cadre extérieur du tableau
+    c.rect(tbl_x, tbl_top_y - tbl_h, tbl_w, tbl_h, stroke=1, fill=0)
 
-    # Ligne horizontale sous le titre
-    c.line(left_margin, title_y, mid_x, title_y)
-
-    # En-tête colonnes
-    hdr_y = title_y - ROW_H
-    c.setFont(font_bold, FS)
-    c.drawCentredString(col1_x + fe_w / 2, hdr_y + PAD, "Fin d'essai")
-    c.drawCentredString(col2_x + fc_w / 2, hdr_y + PAD, "Fin de chantier")
+    # Lignes verticales internes
+    c.line(col2_x, tbl_top_y, col2_x, tbl_top_y - tbl_h)
+    c.line(col3_x, tbl_top_y, col3_x, tbl_top_y - tbl_h)
 
     # Ligne horizontale sous l'en-tête
-    c.line(left_margin, hdr_y, mid_x, hdr_y)
-
-    # Ligne 1 : Niveau d'eau
-    r1_y = hdr_y - ROW_H
-    c.setFont(font_normal, FS)
-    c.drawString(left_margin + PAD, r1_y + PAD, "Niveau d'eau (m)")
-    c.drawCentredString(col1_x + fe_w / 2, r1_y + PAD,
-                        _fmt_obs("Niveau d'eau", "fin_essai"))
-    c.drawCentredString(col2_x + fc_w / 2, r1_y + PAD,
-                        _fmt_obs("Niveau d'eau", "fin_chantier"))
+    hdr_bottom_y = tbl_top_y - HDR_H
+    c.line(tbl_x, hdr_bottom_y, tbl_x + tbl_w, hdr_bottom_y)
 
     # Ligne horizontale entre les deux lignes de données
-    c.line(left_margin, r1_y, mid_x, r1_y)
+    r1_bottom_y = hdr_bottom_y - ROW_H
+    c.line(tbl_x, r1_bottom_y, tbl_x + tbl_w, r1_bottom_y)
 
-    # Ligne 2 : Éboulement
-    r2_y = r1_y - ROW_H
-    c.drawString(left_margin + PAD, r2_y + PAD, "Eboulement (m)")
-    c.drawCentredString(col1_x + fe_w / 2, r2_y + PAD,
-                        _fmt_obs("Eboulement", "fin_essai"))
-    c.drawCentredString(col2_x + fc_w / 2, r2_y + PAD,
-                        _fmt_obs("Eboulement", "fin_chantier"))
-
-    # ── Partie droite : Matériel ──
-    right_x = mid_x + PAD
-    right_w = table_width - obs_table_w
-
-    # Titre : "Matériel"
-    c.setFont(font_bold, FS_TITLE)
-    mat_title = "Matériel"
-    mat_tw = pm.stringWidth(mat_title, font_bold, FS_TITLE)
-    c.drawString(mid_x + (right_w - mat_tw) / 2, title_y + PAD, mat_title)
-
-    # Ligne horizontale sous le titre "Matériel"
-    c.line(mid_x, title_y, left_margin + table_width, title_y)
-
-    # Capacité de l'appareil hydraulique
-    machine_name = essai.get("machine", "").strip()
-    capacite_str = "-"
-    if machine_name:
-        machines = settings_manager.get_machines()
-        machine_cfg = next(
-            (m for m in machines if m.get("nom") == machine_name), None)
-        if machine_cfg:
-            cap = machine_cfg.get("capacite_tonnes", 0)
-            capacite_str = (f"{int(cap)}" if cap == int(cap)
-                            else f"{cap}")
-
-    # Section de la pointe
-    section = essai.get("section", "Grande")
-    section_pointe_str = "10" if section == "Grande" else "6,6"
-
-    # Centrer verticalement les deux lignes dans l'espace sous le titre
-    info_zone_top = title_y
-    info_zone_bot = legend_top_y
-    info_zone_mid = info_zone_bot + (info_zone_top - info_zone_bot) / 2
+    # ── En-tête du tableau (texte sur 2 lignes) ──
+    hdr_line1_y = tbl_top_y - 9     # première ligne d'en-tête
+    hdr_line2_y = tbl_top_y - 18    # deuxième ligne d'en-tête
 
     c.setFont(font_normal, FS)
-    c.drawString(right_x, info_zone_mid + 5,
-                 f"Capacité de l'appareil hydraulique : {capacite_str} t")
-    c.drawString(right_x, info_zone_mid - 8,
-                 f"Section de la pointe : {section_pointe_str} cm\u00B2")
 
-    # ── Légende ──
-    leg_y = bottom_margin + PAD
-    c.setFont(font_bold, FS_LEGEND)
-    lbl = "Légende :  "
-    c.drawString(left_margin + PAD, leg_y, lbl)
-    lx = left_margin + PAD + pm.stringWidth(lbl, font_bold, FS_LEGEND)
+    # Col 1 : "Observations" / "dans le trou"
+    c.drawCentredString(col1_x + col1_w / 2, hdr_line1_y, "Observations")
+    c.drawCentredString(col1_x + col1_w / 2, hdr_line2_y, "dans le trou")
 
-    LEGEND_ITEM_GAP = 15
+    # Col 2 : "Profondeur en" / "fin d'essai [m]"
+    c.drawCentredString(col2_x + col2_w / 2, hdr_line1_y, "Profondeur en")
+    c.drawCentredString(col2_x + col2_w / 2, hdr_line2_y, "fin d'essai [m]")
 
-    c.setFont(font_normal, FS_LEGEND)
-    item1 = "c = coefficient de cohésion"
-    c.drawString(lx, leg_y, item1)
-    lx += pm.stringWidth(item1, font_normal, FS_LEGEND) + LEGEND_ITEM_GAP
+    # Col 3 : "Profondeur en" / "fin de chantier [m]"
+    c.drawCentredString(col3_x + col3_w / 2, hdr_line1_y, "Profondeur en")
+    c.drawCentredString(col3_x + col3_w / 2, hdr_line2_y, "fin de chantier [m]")
 
-    item2 = "E = module pressiométrique"
-    c.drawString(lx, leg_y, item2)
-    lx += pm.stringWidth(item2, font_normal, FS_LEGEND) + LEGEND_ITEM_GAP
+    # ── Ligne de données 1 : Niveau d'eau ──
+    r1_text_y = hdr_bottom_y - ROW_H + PAD
+    c.setFont(font_normal, FS)
+    c.drawString(col1_x + PAD, r1_text_y, "Niveau d'eau")
+    c.drawCentredString(col2_x + col2_w / 2, r1_text_y,
+                        _fmt_obs("Niveau d'eau", "fin_essai"))
+    c.drawCentredString(col3_x + col3_w / 2, r1_text_y,
+                        _fmt_obs("Niveau d'eau", "fin_chantier"))
 
-    item3 = "TRF = classe de sol"
-    c.drawString(lx, leg_y, item3)
+    # ── Ligne de données 2 : Eboulement ──
+    r2_text_y = r1_bottom_y - ROW_H + PAD
+    c.drawString(col1_x + PAD, r2_text_y, "Eboulement")
+    c.drawCentredString(col2_x + col2_w / 2, r2_text_y,
+                        _fmt_obs("Eboulement", "fin_essai"))
+    c.drawCentredString(col3_x + col3_w / 2, r2_text_y,
+                        _fmt_obs("Eboulement", "fin_chantier"))
 
     return DIAG_FOOTER_HEIGHT
 
