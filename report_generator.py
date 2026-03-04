@@ -1424,16 +1424,6 @@ def generate_pdf_report(
             c.drawString(LABELS_LEFT, y, street)
             y -= 18
 
-            c.setFont(font_bold, FONT_SIZE_TEST_TYPE)
-            test_type_text = "SONDAGE AU PENETROMETRE STATIQUE"
-            c.drawString(LABELS_LEFT, y, test_type_text)
-            type_w = pm.stringWidth(
-                test_type_text, font_bold, FONT_SIZE_TEST_TYPE,
-            )
-            c.setFont(font_bold, 13)
-            c.drawString(LABELS_LEFT + type_w + 15, y, test_id)
-            y -= 13
-
             c.setFont(font_normal, FONT_SIZE_SMALL)
             c.drawString(LABELS_LEFT, y, company_line1)
             y -= 8
@@ -1604,6 +1594,27 @@ def generate_pdf_report(
                     p.lineTo(box_x_right, box_y_bottom)
                     c.drawPath(p, stroke=1, fill=0)
                     c.restoreState()
+
+                    # Titre et identifiant d'essai dans la boîte
+                    box_title = "SONDAGE AU PENETROMETRE STATIQUE (CPT)"
+                    box_center_x = (box_x_left + box_x_right) / 2
+                    box_center_y = (box_y_bottom + box_y_top) / 2
+                    text_y = box_center_y - FONT_SIZE_TEST_TYPE * 0.35
+
+                    c.setFont(font_bold, FONT_SIZE_TEST_TYPE)
+                    title_w = pm.stringWidth(
+                        box_title, font_bold, FONT_SIZE_TEST_TYPE,
+                    )
+                    c.setFont(font_bold, 13)
+                    id_w = pm.stringWidth(test_id, font_bold, 13)
+
+                    total_w = title_w + 15 + id_w
+                    text_x = box_center_x - total_w / 2
+
+                    c.setFont(font_bold, FONT_SIZE_TEST_TYPE)
+                    c.drawString(text_x, text_y, box_title)
+                    c.setFont(font_bold, 13)
+                    c.drawString(text_x + title_w + 15, text_y, test_id)
 
                 except Exception as exc:
                     logger.error(

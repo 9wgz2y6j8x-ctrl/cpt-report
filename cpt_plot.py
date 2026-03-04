@@ -298,6 +298,12 @@ def plot_cpt(df: pd.DataFrame, config: CPTPlotConfig = None) -> tuple:
     # Inverser l'axe Y
     ax1.invert_yaxis()
 
+    # Réduire l'épaisseur de tous les axes
+    for spine in ax1.spines.values():
+        spine.set_linewidth(0.5)
+    for spine in ax2.spines.values():
+        spine.set_linewidth(0.5)
+
     # Configuration des grilles
     ax1.grid(False)
     ax1.yaxis.grid(True, linestyle='--', linewidth=0.65, color='lightgray', dashes=(4, 7))
@@ -325,6 +331,13 @@ def plot_cpt(df: pd.DataFrame, config: CPTPlotConfig = None) -> tuple:
     ax2.set_xticks(qc_ticks)
     qc_labels = [int(tick) if tick == int(tick) else tick for tick in qc_ticks]
     ax2.set_xticklabels(qc_labels, fontweight='bold')
+
+    # Décaler le premier et le dernier label pour éviter la superposition
+    # avec les lignes verticales de l'axe
+    tick_labels_ax2 = ax2.get_xticklabels()
+    if len(tick_labels_ax2) >= 2:
+        tick_labels_ax2[0].set_ha('left')
+        tick_labels_ax2[-1].set_ha('right')
 
     # Taille des ticks
     ax1.tick_params(axis='x', which='major', labelsize=config.tick_label_fontsize)
