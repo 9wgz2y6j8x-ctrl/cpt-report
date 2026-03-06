@@ -446,7 +446,7 @@ def plot_cpt(df: pd.DataFrame, config: CPTPlotConfig = None) -> tuple:
         # 4 cm a gauche du bord droit de ax1 (bord droit = 1.0 en axes coords)
         ax1_pos = ax1.get_position()
         ax1_width_in = ax1_pos.width * fig.get_figwidth()
-        x_axes = 1.0 - (4.0 / 2.54) / ax1_width_in
+        x_axes = 1.0 - (3.8 / 2.54) / ax1_width_in
         for depth_val, text_val in config.user_annotations.items():
             if not text_val or not str(text_val).strip():
                 continue
@@ -458,7 +458,7 @@ def plot_cpt(df: pd.DataFrame, config: CPTPlotConfig = None) -> tuple:
                 x_axes, depth_f, str(text_val).strip(),
                 transform=trans,
                 fontsize=6, fontfamily='Arial', color='black',
-                rotation=0, ha='right', va='center',
+                rotation=0, ha='center', va='center',
                 clip_on=False,
             )
 
