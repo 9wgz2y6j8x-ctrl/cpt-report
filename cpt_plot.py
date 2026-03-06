@@ -68,6 +68,10 @@ class CPTPlotConfig:
     # 10. Paire d'unites graphiques
     plot_pair: str = DEFAULT_PLOT_PAIR  # "MPa_kN" ou "kg_kg"
 
+    # 11. Annotations utilisateur (vue Observations)
+    # Dict {profondeur_float: texte_str} ou None
+    user_annotations: Optional[dict] = None
+
     def __post_init__(self):
         """Validation et initialisation post-creation."""
         # Deriver les parametres depuis la paire si non explicites
@@ -433,6 +437,30 @@ def plot_cpt(df: pd.DataFrame, config: CPTPlotConfig = None) -> tuple:
         fig.text(0.5, 0.5, config.watermark_text,
                 fontsize=50, color='gray', alpha=0.2,
                 ha='center', va='center', rotation=45)
+
+    # Annotations utilisateur (vue Observations)
+    if config.user_annotations:
+        from matplotlib.transforms import blended_transform_factory
+        # X en coordonnees axes, Y en coordonnees data
+        trans = blended_transform_factory(ax1.transAxes, ax1.transData)
+        # 4 cm a gauche du bord droit de ax1 (bord droit = 1.0 en axes coords)
+        ax1_pos = ax1.get_position()
+        ax1_width_in = ax1_pos.width * fig.get_figwidth()
+        x_axes = 1.0 - (4.0 / 2.54) / ax1_width_in
+        for depth_val, text_val in config.user_annotations.items():
+            if not text_val or not str(text_val).strip():
+                continue
+            try:
+                depth_f = float(depth_val)
+            except (ValueError, TypeError):
+                continue
+            ax1.text(
+                x_axes, depth_f, str(text_val).strip(),
+                transform=trans,
+                fontsize=6, fontfamily='Arial', color='black',
+                rotation=0, ha='right', va='center',
+                clip_on=False,
+            )
 
     # Ajustement des marges
     plt.subplots_adjust(

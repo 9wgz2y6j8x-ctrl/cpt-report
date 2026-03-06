@@ -1756,6 +1756,17 @@ def generate_pdf_report(
                 diagram_w_in = diagram_width_pt / 72.0
                 diagram_h_in = diagram_height_pt / 72.0
 
+                # Annotations utilisateur (vue Observations)
+                _user_annots = None
+                _obs_store_diag = (observations or {}).get(file_path_diag)
+                if _obs_store_diag:
+                    _raw_annots = _obs_store_diag.get("annotations", {})
+                    if _raw_annots:
+                        _user_annots = {
+                            d: t for d, t in _raw_annots.items()
+                            if t and str(t).strip()
+                        } or None
+
                 plot_config = CPTPlotConfig(
                     show_titles=False,
                     plot_pair=_plot_pair,
@@ -1768,7 +1779,8 @@ def generate_pdf_report(
                     #adjust_top=0.92,     # Réduit l'espace vide en haut (puisqu'il n'y a pas de titre)
                     adjust_bottom=0.03,   # Réduit l'espace vide en bas
                     qc_color="black",
-                    qst_color="black"
+                    qst_color="black",
+                    user_annotations=_user_annots,
                 )
 
                 try:
@@ -1787,7 +1799,8 @@ def generate_pdf_report(
                         #adjust_top=0.92,     # Réduit l'espace vide en haut (puisqu'il n'y a pas de titre)
                         adjust_bottom=0.03,   # Réduit l'espace vide en bas
                         qc_color="black",
-                        qst_color="black"
+                        qst_color="black",
+                        user_annotations=_user_annots,
                     )
                     try:
                         fig_diag, _ax1, _ax2 = plot_cpt(
