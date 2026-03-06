@@ -1777,6 +1777,7 @@ def generate_pdf_report(
                     show_titles=False,
                     plot_pair=_plot_pair,
                     resample_interval=0.20,
+                    prof_arrondie=essai.get("prof_arrondie"),
                     figure_dpi=300,
                     figure_width=diagram_w_in,
                     figure_height=diagram_h_in,
@@ -1797,6 +1798,7 @@ def generate_pdf_report(
                     plot_config_nr = CPTPlotConfig(
                         show_titles=False,
                         plot_pair=_plot_pair,
+                        prof_arrondie=essai.get("prof_arrondie"),
                         figure_dpi=300,
                         figure_width=diagram_w_in,
                         figure_height=diagram_h_in,
