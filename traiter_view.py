@@ -67,6 +67,87 @@ def _arrondi_entier(val) -> int:
         return 0
 
 
+def _compute_derniere_valeur(file_data: dict, raw_data_manager) -> Optional[Dict[str, Any]]:
+    """Calcule la derniere valeur qc/Qst adoptee apres le dernier multiple de 0.2m.
+
+    Transpose la logique VBA (CreerFeuilleEncodage + TraiterLignesNonMultiples) :
+    parmi les mesures au-dela du dernier multiple de 0.2m, on garde celle
+    avec le qc maximum.
+
+    Retourne None si max_depth est exactement un multiple de 0.2m (pas de troncature).
+    """
+    from tabular_reader import load_cpt_dataframe
+    from cpt_plot import CPTPlotConfig
+
+    try:
+        df = load_cpt_dataframe(file_data)
+        if df.empty:
+            return None
+
+        cfg = CPTPlotConfig()
+        # Resoudre les noms de colonnes
+        cols = df.columns.tolist()
+        if isinstance(cfg.col_depth, int):
+            col_depth = cols[cfg.col_depth - 1]
+        else:
+            col_depth = cfg.col_depth
+        if isinstance(cfg.col_qc, int):
+            col_qc = cols[cfg.col_qc - 1]
+        else:
+            col_qc = cfg.col_qc
+        if isinstance(cfg.col_qst, int):
+            col_qst = cols[cfg.col_qst - 1]
+        else:
+            col_qst = cfg.col_qst
+
+        depths = df[col_depth].dropna().astype(float)
+        if depths.empty:
+            return None
+
+        max_depth = float(depths.max())
+        prof_arrondie = _arrondi_profondeur(max_depth)
+
+        # Dernier multiple de 0.2m strictement inferieur a max_depth
+        dernier_multiple = round(math.floor(max_depth / _DEPTH_INCREMENT) * _DEPTH_INCREMENT, 2)
+
+        # Si max_depth est exactement un multiple de 0.2m, pas de troncature
+        if abs(max_depth - dernier_multiple) < 1e-6:
+            return None
+
+        # Filtrer les lignes au-dela du dernier multiple
+        mask = df[col_depth].astype(float) > dernier_multiple + 1e-6
+        df_beyond = df[mask].copy()
+
+        if df_beyond.empty:
+            return None
+
+        # Trouver la ligne avec le qc maximum
+        qc_values = df_beyond[col_qc].astype(float)
+        idx_max = qc_values.idxmax()
+
+        qc_max = float(df_beyond.loc[idx_max, col_qc])
+        qst_at_max = float(df_beyond.loc[idx_max, col_qst])
+        depth_at_max = float(df_beyond.loc[idx_max, col_depth])
+        depth_at_max_arrondie = _arrondi_profondeur(depth_at_max)
+
+        # Verifier si la profondeur arrondie du point adopte
+        # coincide avec le dernier multiple (doublon)
+        is_doublon = abs(depth_at_max_arrondie - dernier_multiple) < 1e-6
+
+        return {
+            "qc_max": qc_max,
+            "qst_at_max": qst_at_max,
+            "depth_at_max": depth_at_max,
+            "prof_arrondie": prof_arrondie,
+            "dernier_multiple": dernier_multiple,
+            "max_depth": max_depth,
+            "nb_lignes_tronquees": len(df_beyond),
+            "is_doublon": is_doublon,
+        }
+    except Exception:
+        return None
+
+
 def _natural_sort_key(text: str) -> list:
     """Cle de tri naturel : separe texte et nombres pour trier 'P2' < 'P10'."""
     parts = re.split(r'(\d+)', str(text) if text else "")
@@ -101,6 +182,9 @@ class TraiterView(ctk.CTkFrame):
 
         # Mapping iid -> file_path
         self._iid_to_filepath: Dict[str, str] = {}
+
+        # Details du calcul de la derniere valeur par fichier
+        self._derniere_val_details: Dict[str, Optional[Dict[str, Any]]] = {}
 
         self._bindings_installed = False
 
@@ -286,6 +370,7 @@ class TraiterView(ctk.CTkFrame):
         self._tree.bind("<Double-1>", self._on_dblclick)
         self._tree.bind("<Return>", self._on_enter_key)
         self._tree.bind("<F2>", self._on_enter_key)
+        self._tree.bind("<Button-3>", self._on_right_click)
 
     def _create_column_toggles(self, parent):
         """Cree les boutons radio pour afficher/masquer certaines colonnes."""
@@ -435,6 +520,9 @@ class TraiterView(ctk.CTkFrame):
                 "max_depth": max_depth,
             }
 
+            # Calculer la derniere valeur
+            self._derniere_val_details[fp] = _compute_derniere_valeur(file_data, rdm)
+
             # Initialiser les params si nouveau
             if fp not in self._essai_params:
                 self._essai_params[fp] = self._default_params()
@@ -443,6 +531,7 @@ class TraiterView(ctk.CTkFrame):
         removed = set(self._essai_params.keys()) - current_fps
         for fp in removed:
             self._essai_params.pop(fp, None)
+            self._derniere_val_details.pop(fp, None)
 
         # Mettre a jour l'ordre : retirer les absents, ajouter les nouveaux
         self._order = [fp for fp in self._order if fp in current_fps]
@@ -478,6 +567,9 @@ class TraiterView(ctk.CTkFrame):
             alpha_val = params.get("alpha", 1.5)
             alpha_str = f"{alpha_val:.1f}" if alpha_val != int(alpha_val) else str(int(alpha_val))
 
+            dv = self._derniere_val_details.get(fp)
+            derniere_val_str = f"{dv['qc_max']:.2f}" if dv else ""
+
             tag = "evenrow" if i % 2 == 0 else "oddrow"
             iid = self._tree.insert(
                 "", "end",
@@ -487,7 +579,7 @@ class TraiterView(ctk.CTkFrame):
                     params.get("section", "Grande"),
                     delta_petit, delta_grand,
                     prof_atteinte, prof_arrondie,
-                    "",  # derniere_val (logique a implementer)
+                    derniere_val_str,
                     alpha_str,
                 ),
                 tags=(tag,),
@@ -734,13 +826,18 @@ class TraiterView(ctk.CTkFrame):
         alpha_val = params.get("alpha", 1.5)
         alpha_str = f"{alpha_val:.1f}" if alpha_val != int(alpha_val) else str(int(alpha_val))
 
+        # Recalculer la derniere valeur
+        self._derniere_val_details[fp] = _compute_derniere_valeur(file_data, rdm)
+        dv = self._derniere_val_details.get(fp)
+        derniere_val_str = f"{dv['qc_max']:.2f}" if dv else ""
+
         self._tree.item(iid, values=(
             job, test,
             params.get("machine", ""),
             params.get("section", "Grande"),
             delta_petit, delta_grand,
             prof_atteinte, prof_arrondie,
-            "",  # derniere_val (logique a implementer)
+            derniere_val_str,
             alpha_str,
         ))
 
@@ -782,6 +879,189 @@ class TraiterView(ctk.CTkFrame):
                 self._tree.selection_set(next_iid)
                 self._tree.see(next_iid)
 
+    # ──────── Menu contextuel ────────
+
+    def _on_right_click(self, event):
+        """Clic droit : affiche le menu contextuel."""
+        item = self._tree.identify_row(event.y)
+        if not item:
+            return
+        self._tree.selection_set(item)
+
+        fp = self._iid_to_filepath.get(item)
+        if not fp:
+            return
+
+        root = self.winfo_toplevel()
+
+        # Detruire un eventuel menu precedent
+        if hasattr(self, "_ctx_menu") and self._ctx_menu and self._ctx_menu.winfo_exists():
+            self._ctx_menu.destroy()
+
+        menu = ctk.CTkFrame(root, fg_color="#FFFFFF", corner_radius=6,
+                            border_width=1, border_color="#D0D0D0")
+        self._ctx_menu = menu
+
+        menu_btn_style = {
+            "font": ("Verdana", 13),
+            "fg_color": "transparent",
+            "anchor": "w",
+            "height": 34,
+            "corner_radius": 4,
+        }
+
+        dv = self._derniere_val_details.get(fp)
+        has_detail = dv is not None
+
+        btn_detail = ctk.CTkButton(
+            menu,
+            text="  Détail calcul dernière ligne",
+            text_color="#37474F" if has_detail else "#BDBDBD",
+            hover_color="#E3F2FD" if has_detail else "#FAFAFA",
+            state="normal" if has_detail else "disabled",
+            command=lambda: self._ctx_show_derniere_ligne_detail(menu, fp),
+            **menu_btn_style,
+        )
+        btn_detail.pack(fill="x", padx=6, pady=6)
+
+        menu.place(x=event.x_root - root.winfo_rootx(),
+                   y=event.y_root - root.winfo_rooty())
+        menu.lift()
+
+        def _close(e):
+            try:
+                mx, my = e.x_root, e.y_root
+                wx = menu.winfo_rootx()
+                wy = menu.winfo_rooty()
+                ww = menu.winfo_width()
+                wh = menu.winfo_height()
+                if wx <= mx <= wx + ww and wy <= my <= wy + wh:
+                    return
+            except Exception:
+                pass
+            try:
+                if menu.winfo_exists():
+                    menu.destroy()
+            except Exception:
+                pass
+            try:
+                root.unbind("<Button-1>", cid)
+            except Exception:
+                pass
+
+        cid = root.bind("<Button-1>", _close, add="+")
+
+    def _ctx_show_derniere_ligne_detail(self, menu, fp: str):
+        """Ferme le menu et ouvre la fenetre de detail."""
+        if menu and menu.winfo_exists():
+            menu.destroy()
+        self._show_derniere_ligne_detail(fp)
+
+    def _show_derniere_ligne_detail(self, fp: str):
+        """Affiche une fenetre Toplevel avec le detail du calcul de la derniere ligne."""
+        dv = self._derniere_val_details.get(fp)
+        if dv is None:
+            return
+
+        rdm = self.model.raw_data_manager
+        test_name = rdm.get_effective_value(fp, "TestNumber") or os.path.basename(fp)
+
+        root = self.winfo_toplevel()
+        dialog = ctk.CTkToplevel(root)
+        dialog.title(f"Détail dernière ligne — {test_name}")
+        dialog.resizable(False, False)
+        dialog.grab_set()
+        dialog.transient(root)
+
+        w, h = 560, 400
+        dialog.geometry(f"{w}x{h}")
+        dialog.update_idletasks()
+        x = root.winfo_x() + (root.winfo_width() - w) // 2
+        y = root.winfo_y() + (root.winfo_height() - h) // 2
+        dialog.geometry(f"+{x}+{y}")
+
+        frame = ctk.CTkFrame(dialog, fg_color="#FFFFFF", corner_radius=0)
+        frame.pack(fill="both", expand=True)
+
+        # En-tete
+        header = ctk.CTkFrame(frame, fg_color="#0115B8", corner_radius=0, height=44)
+        header.pack(fill="x")
+        header.pack_propagate(False)
+        ctk.CTkLabel(
+            header,
+            text="Détail calcul dernière ligne",
+            font=("Verdana", 15, "bold"),
+            text_color="white",
+        ).pack(padx=15, pady=10)
+
+        # Corps du tableau
+        body = ctk.CTkFrame(frame, fg_color="#FFFFFF")
+        body.pack(fill="both", expand=True, padx=20, pady=15)
+
+        max_depth = dv["max_depth"]
+        dernier_mult = dv["dernier_multiple"]
+        prof_arr = dv["prof_arrondie"]
+        qc_max = dv["qc_max"]
+        qst_at_max = dv["qst_at_max"]
+        depth_at_max = dv["depth_at_max"]
+        nb_lignes = dv["nb_lignes_tronquees"]
+        is_doublon = dv["is_doublon"]
+
+        # Determiner le cas
+        if prof_arr < max_depth:
+            cas_label = f"prof. arrondie < prof. réelle"
+            cas_color = "#E65100"
+        else:
+            cas_label = f"prof. arrondie > prof. réelle"
+            cas_color = "#1565C0"
+
+        rows = [
+            ("Cas de figure", f"{cas_label}", cas_color),
+            ("Prof. réelle (atteinte)", f"{max_depth:.2f} m", "#37474F"),
+            ("Prof. arrondie (0.2m)", f"{prof_arr:.2f} m", "#37474F"),
+            ("Dernier multiple 0.2m", f"{dernier_mult:.2f} m", "#37474F"),
+            ("Mesures tronquées", f"Entre {dernier_mult:.2f} et {max_depth:.2f} m ({nb_lignes} ligne{'s' if nb_lignes > 1 else ''})", "#37474F"),
+            ("Valeur qc adoptée (max)", f"{qc_max:.2f}  à prof. {depth_at_max:.2f} m", "#1B5E20"),
+            ("Qst correspondant", f"{qst_at_max:.2f}", "#37474F"),
+            ("Doublon ?", "Oui — remplace la dernière ligne régulière" if is_doublon else "Non — ajout d'un nouveau point", "#C62828" if is_doublon else "#1565C0"),
+            ("Diagramme tracé jusqu'à", f"{prof_arr:.2f} m", "#0115B8"),
+        ]
+
+        for i, (label, value, color) in enumerate(rows):
+            bg = "#F5F7FA" if i % 2 == 0 else "#FFFFFF"
+            row_frame = ctk.CTkFrame(body, fg_color=bg, corner_radius=0, height=34)
+            row_frame.pack(fill="x")
+            row_frame.pack_propagate(False)
+
+            ctk.CTkLabel(
+                row_frame, text=label,
+                font=("Verdana", 11), text_color="#6B7280",
+                anchor="w",
+            ).pack(side="left", padx=(10, 5), fill="y")
+
+            ctk.CTkLabel(
+                row_frame, text=value,
+                font=("Verdana", 11, "bold"), text_color=color,
+                anchor="e",
+            ).pack(side="right", padx=(5, 10), fill="y")
+
+        # Bouton fermer
+        btn_frame = ctk.CTkFrame(frame, fg_color="#FFFFFF", height=50)
+        btn_frame.pack(fill="x", side="bottom")
+        btn_frame.pack_propagate(False)
+
+        ctk.CTkButton(
+            btn_frame,
+            text="Fermer",
+            font=("Verdana", 12),
+            fg_color="#0115B8",
+            hover_color="#0D47A1",
+            width=120,
+            height=34,
+            corner_radius=6,
+            command=dialog.destroy,
+        ).pack(pady=8)
+
     # ──────── Accesseurs pour le rapport ────────
 
     def get_ordered_essais(self) -> List[Dict[str, Any]]:
@@ -815,6 +1095,8 @@ class TraiterView(ctk.CTkFrame):
                 "delta_grand": params.get("delta_grand", 0),
                 "prof_atteinte": max_depth,
                 "prof_arrondie": _arrondi_profondeur(max_depth) if max_depth is not None else None,
+                "derniere_val_qc": self._derniere_val_details.get(fp, {}).get("qc_max") if self._derniere_val_details.get(fp) else None,
+                "derniere_val_qst": self._derniere_val_details.get(fp, {}).get("qst_at_max") if self._derniere_val_details.get(fp) else None,
                 "alpha": params.get("alpha", 1.5),
             })
 

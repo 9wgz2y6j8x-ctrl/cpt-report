@@ -72,6 +72,9 @@ class CPTPlotConfig:
     # Dict {profondeur_float: texte_str} ou None
     user_annotations: Optional[dict] = None
 
+    # 12. Profondeur arrondie (etendre le trace jusqu'a cette profondeur)
+    prof_arrondie: Optional[float] = None
+
     def __post_init__(self):
         """Validation et initialisation post-creation."""
         # Deriver les parametres depuis la paire si non explicites
@@ -243,6 +246,17 @@ def _resample_cpt_data(df: pd.DataFrame, config: CPTPlotConfig,
     selected_indices = sorted(set(selected_indices))
     df_resampled = df_sorted.loc[selected_indices].copy()
 
+    # Etendre jusqu'a prof_arrondie si necessaire
+    if config.prof_arrondie is not None:
+        depth_max_resampled = df_resampled[col_depth_resolved].max()
+        if config.prof_arrondie > depth_max_resampled + 1e-6:
+            # Trouver le point le plus proche dans les donnees originales
+            distances = np.abs(df_sorted[col_depth_resolved] - config.prof_arrondie)
+            closest_idx = distances.idxmin()
+            new_row = df_sorted.loc[[closest_idx]].copy()
+            new_row[col_depth_resolved] = config.prof_arrondie
+            df_resampled = pd.concat([df_resampled, new_row], ignore_index=True)
+
     return df_resampled
 
 
@@ -282,6 +296,8 @@ def plot_cpt(df: pd.DataFrame, config: CPTPlotConfig = None) -> tuple:
 
     # Calcul de la limite de profondeur
     max_depth_data = df_plot[col_depth_resolved].max()
+    if config.prof_arrondie is not None:
+        max_depth_data = max(max_depth_data, config.prof_arrondie)
     depth_limit = config.get_depth_limit(max_depth_data)
 
     # Recuperer la configuration d'axes
