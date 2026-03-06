@@ -1206,7 +1206,7 @@ def _draw_diagram_footer(c, left_margin, bottom_margin, table_width,
     for abbr, desc in legend_items:
         cur_y -= LINE_H
         c.drawString(left_margin + 4, cur_y, abbr)
-        c.drawString(left_margin + 14, cur_y, "\u2192")
+        c.drawString(left_margin + 18, cur_y, "\u2192")
         c.drawString(desc_x, cur_y, desc)
 
     # --- Section Matériel utilisé ---
@@ -1231,15 +1231,17 @@ def _draw_diagram_footer(c, left_margin, bottom_margin, table_width,
     section_type = "M1"
     section_tubes_cm2 = "10" if section == "Grande" else "6,6"
 
-    # Position X pour les valeurs en gras (alignées à droite de la colonne)
-    val_x = left_margin + left_w - 4
+    # Espacement entre le label et la valeur en gras
+    VAL_GAP = 6
 
     c.setFont(font_normal, FS)
     # Ligne 1 : Capacité
     cur_y -= LINE_H
-    c.drawString(left_margin + 4, cur_y, "Capacité de l'appareil hydraulique [T]")
+    lbl_cap = "Capacité de l'appareil hydraulique [T]"
+    c.drawString(left_margin + 4, cur_y, lbl_cap)
+    cap_val_x = left_margin + 4 + pm.stringWidth(lbl_cap, font_normal, FS) + VAL_GAP
     c.setFont(font_bold, FS)
-    c.drawRightString(val_x, cur_y, capacite_str)
+    c.drawString(cap_val_x, cur_y, capacite_str)
 
     # Ligne 2 : Section de la pointe [cm²] et type
     cur_y -= LINE_H
@@ -1252,10 +1254,12 @@ def _draw_diagram_footer(c, left_margin, bottom_margin, table_width,
     c.drawString(x_after, cur_y + 2.5, "2")
     x_after += pm.stringWidth("2", font_normal, FS * 0.7)
     c.setFont(font_normal, FS)
-    c.drawString(x_after, cur_y, "] et type")
+    lbl_suffix = "] et type"
+    c.drawString(x_after, cur_y, lbl_suffix)
+    x_after += pm.stringWidth(lbl_suffix, font_normal, FS)
     # Valeur en gras : "10 M1"
     c.setFont(font_bold, FS)
-    c.drawRightString(val_x, cur_y, f"{section_pointe_cm2} {section_type}")
+    c.drawString(x_after + VAL_GAP, cur_y, f"{section_pointe_cm2} {section_type}")
 
     # Ligne 3 : Section des tubes allongés [cm²]
     cur_y -= LINE_H
@@ -1267,9 +1271,11 @@ def _draw_diagram_footer(c, left_margin, bottom_margin, table_width,
     c.drawString(x_after, cur_y + 2.5, "2")
     x_after += pm.stringWidth("2", font_normal, FS * 0.7)
     c.setFont(font_normal, FS)
-    c.drawString(x_after, cur_y, "]")
+    lbl_suffix2 = "]"
+    c.drawString(x_after, cur_y, lbl_suffix2)
+    x_after += pm.stringWidth(lbl_suffix2, font_normal, FS)
     c.setFont(font_bold, FS)
-    c.drawRightString(val_x, cur_y, section_tubes_cm2)
+    c.drawString(x_after + VAL_GAP, cur_y, section_tubes_cm2)
 
     # ── BLOC DROIT : Tableau Observations ──
     c.setStrokeColor(black)
