@@ -1598,17 +1598,72 @@ def generate_pdf_report(
             )
 
             df_plot = df_diag.copy()
-            qc_int = qc_to_internal(
-                df_diag[col_qc_diag].values, unit_qc_diag, tip_area_diag,
+
+            # ── Tenter d'appliquer les corrections qc / Qst ──
+            corrected_applied = False
+            correction_params_diag = _build_correction_params(
+                essai, settings_manager, raw_data_manager,
             )
-            qst_int = qst_to_internal(
-                df_diag[col_qst_diag].values, unit_qst_diag,
-            )
-            qc_plt, qst_plt, _, _ = internal_to_plot(
-                qc_int, qst_int, _plot_pair, tip_area_diag,
-            )
-            df_plot[col_qc_diag] = qc_plt
-            df_plot[col_qst_diag] = qst_plt
+            if correction_params_diag is not None:
+                try:
+                    col_depth_diag = _resolve_column_name(
+                        df_diag, cfg_diag.col_depth, "col_depth"
+                    )
+                    corrections_diag = _compute_corrections(
+                        df_diag, col_depth_diag, correction_params_diag,
+                        unit_qc_diag, unit_qst_diag, tip_area_diag,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Erreur calcul corrections diagramme %s: %s",
+                        file_path_diag, exc,
+                    )
+                    corrections_diag = None
+
+                if corrections_diag is not None:
+                    # Convertir kg/cm² et kgf → unités internes → paire graphique
+                    # qc_out est en kgf/cm² (pression) ; qc_to_internal("kg")
+                    # attend une force en kgf, donc on multiplie par la surface.
+                    qc_int_corr = qc_to_internal(
+                        corrections_diag["qc_out"] * tip_area_diag,
+                        "kg", tip_area_diag,
+                    )
+                    qst_int_corr = qst_to_internal(
+                        corrections_diag["qst_out"], "kg",
+                    )
+                    qc_plt_corr, qst_plt_corr, _, _ = internal_to_plot(
+                        qc_int_corr, qst_int_corr, _plot_pair, tip_area_diag,
+                    )
+                    # Remonter les valeurs corrigées dans df_plot via les profondeurs
+                    corr_depths = corrections_diag["depths"]
+                    mask_depth = df_diag[col_depth_diag].notna()
+                    df_sorted_idx = (
+                        df_diag.loc[mask_depth, col_depth_diag]
+                        .astype(float)
+                        .sort_values()
+                    )
+                    df_plot.loc[df_sorted_idx.index, col_qc_diag] = qc_plt_corr
+                    df_plot.loc[df_sorted_idx.index, col_qst_diag] = qst_plt_corr
+                    corrected_applied = True
+
+            if not corrected_applied:
+                if correction_params_diag is None:
+                    logger.info(
+                        "Pas de correction pour l'essai %s (aucune machine).",
+                        essai.get("test", file_path_diag),
+                    )
+                # Fallback : conversion brute d'unités
+                qc_int = qc_to_internal(
+                    df_diag[col_qc_diag].values, unit_qc_diag, tip_area_diag,
+                )
+                qst_int = qst_to_internal(
+                    df_diag[col_qst_diag].values, unit_qst_diag,
+                )
+                qc_plt, qst_plt, _, _ = internal_to_plot(
+                    qc_int, qst_int, _plot_pair, tip_area_diag,
+                )
+                df_plot[col_qc_diag] = qc_plt
+                df_plot[col_qst_diag] = qst_plt
 
             # ── En-tete (identique aux pages tableaux) ──
             location = essai.get("location", "").strip()
