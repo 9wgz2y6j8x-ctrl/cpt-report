@@ -278,6 +278,10 @@ class TraiterView(ctk.CTkFrame):
         # Appliquer la visibilite initiale des colonnes
         self._apply_column_visibility()
 
+        # Redistribuer les colonnes quand le Treeview change de taille
+        self._tree.bind("<Configure>", self._on_tree_configure)
+        self._resize_after_id = None
+
         # Bindings
         self._tree.bind("<Double-1>", self._on_dblclick)
         self._tree.bind("<Return>", self._on_enter_key)
@@ -327,11 +331,41 @@ class TraiterView(ctk.CTkFrame):
             if col_id in self._TOGGLEABLE and not self._col_visible.get(col_id, True):
                 self._tree.column(col_id, width=0, minwidth=0, stretch=False)
             else:
-                self._tree.column(col_id, width=width, minwidth=60, stretch=True)
                 visible_cols.append(col_id)
 
         # Mettre a jour displaycolumns pour masquer reellement les colonnes
         self._tree.configure(displaycolumns=visible_cols)
+
+        # Redistribuer la largeur entre les colonnes visibles
+        self._distribute_column_widths()
+
+    def _on_tree_configure(self, event=None):
+        """Appele quand le Treeview est redimensionne."""
+        if self._resize_after_id is not None:
+            self.after_cancel(self._resize_after_id)
+        self._resize_after_id = self.after(30, self._distribute_column_widths)
+
+    def _distribute_column_widths(self):
+        """Redistribue la largeur disponible entre les colonnes visibles."""
+        self._resize_after_id = None
+        tree_width = self._tree.winfo_width()
+        if tree_width <= 1:
+            return
+
+        # Colonnes visibles avec leurs largeurs de reference
+        visible = []
+        for col_id, heading, ref_width, anchor in self._COLUMNS:
+            if col_id in self._TOGGLEABLE and not self._col_visible.get(col_id, True):
+                continue
+            visible.append((col_id, ref_width))
+
+        if not visible:
+            return
+
+        total_ref = sum(w for _, w in visible)
+        for col_id, ref_width in visible:
+            new_width = max(60, int(tree_width * ref_width / total_ref))
+            self._tree.column(col_id, width=new_width, minwidth=60, stretch=False)
 
     # ──────── Cycle de vie ────────
 
