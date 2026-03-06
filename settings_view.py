@@ -1079,6 +1079,21 @@ class SettingsView(ctk.CTkFrame):
             max_value=4,
         )
 
+        # --- Seuil de détection refus pointe ---
+        self._build_numeric_param_card(
+            title="Seuil de détection refus pointe",
+            description=(
+                "Seuil de résistance de pointe (qc) au-delà duquel un refus "
+                "de pointe est détecté. Valeur comprise entre 35 et 50 MPa."
+            ),
+            unit="MPa",
+            default_value=39,
+            current_value=data.get("seuil_detection_refus_pointe", 39),
+            setting_key="seuil_detection_refus_pointe",
+            min_value=35,
+            max_value=50,
+        )
+
     def _make_setter_str(self, section: str, key: str):
         """Setter qui ne convertit pas en int (pour les ComboBox texte)."""
         def _set(value):

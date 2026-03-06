@@ -104,6 +104,9 @@ class TraiterView(ctk.CTkFrame):
 
         self._bindings_installed = False
 
+        # Visibilite des colonnes masquables
+        self._col_visible: Dict[str, bool] = dict(self._TOGGLEABLE)
+
         self._build_ui()
 
     # ──────── Colonnes ────────
@@ -117,8 +120,15 @@ class TraiterView(ctk.CTkFrame):
         ("delta_grand", "\u03b4 Grand Mano", 95, "center"),
         ("prof_atteinte", "Prof. atteinte (m)", 120, "center"),
         ("prof_arrondie", "Prof. arrondie (m)", 125, "center"),
+        ("derniere_val", "Derni\u00e8re val.", 95, "center"),
         ("alpha", "\u03b1", 50, "center"),
     ]
+
+    # Colonnes masquables : col_key -> visible par defaut
+    _TOGGLEABLE = {
+        "job": False,
+        "alpha": True,
+    }
 
     # Colonnes editables et leur type d'edition
     _EDITABLE = {
@@ -203,6 +213,7 @@ class TraiterView(ctk.CTkFrame):
         inner.pack(fill="both", expand=True, padx=16, pady=12)
 
         self._create_tree(inner)
+        self._create_column_toggles(inner)
 
     def _create_tree(self, parent):
         """Cree le Treeview avec les colonnes definies."""
@@ -264,10 +275,66 @@ class TraiterView(ctk.CTkFrame):
         self._tree.tag_configure("oddrow", background="#FFFFFF")
         self._tree.tag_configure("evenrow", background=COLORS["row_alt"])
 
+        # Appliquer la visibilite initiale des colonnes
+        self._apply_column_visibility()
+
         # Bindings
         self._tree.bind("<Double-1>", self._on_dblclick)
         self._tree.bind("<Return>", self._on_enter_key)
         self._tree.bind("<F2>", self._on_enter_key)
+
+    def _create_column_toggles(self, parent):
+        """Cree les boutons radio pour afficher/masquer certaines colonnes."""
+        toggle_bar = ctk.CTkFrame(parent, fg_color="transparent", height=32)
+        toggle_bar.pack(fill="x", pady=(6, 0))
+
+        _TOGGLE_LABELS = {
+            "job": "N\u00b0 dossier",
+            "alpha": "\u03b1 (alpha)",
+        }
+
+        for col_key, default_vis in self._TOGGLEABLE.items():
+            label = _TOGGLE_LABELS.get(col_key, col_key)
+            var = ctk.BooleanVar(value=self._col_visible.get(col_key, default_vis))
+
+            cb = ctk.CTkCheckBox(
+                toggle_bar,
+                text=label,
+                variable=var,
+                font=("Verdana", 11),
+                text_color=COLORS["text_secondary"],
+                fg_color=COLORS["accent"],
+                hover_color=COLORS["accent_light"],
+                border_color=COLORS["border"],
+                checkmark_color="white",
+                corner_radius=4,
+                height=24,
+                checkbox_width=18,
+                checkbox_height=18,
+                command=lambda k=col_key, v=var: self._toggle_column(k, v.get()),
+            )
+            cb.pack(side="left", padx=(0, 20))
+
+    def _toggle_column(self, col_key: str, visible: bool):
+        """Affiche ou masque une colonne du Treeview."""
+        self._col_visible[col_key] = visible
+        self._apply_column_visibility()
+
+    def _apply_column_visibility(self):
+        """Met a jour les colonnes affichees selon _col_visible."""
+        displayed = []
+        for col_id, heading, width, anchor in self._COLUMNS:
+            if col_id in self._TOGGLEABLE and not self._col_visible.get(col_id, True):
+                self._tree.column(col_id, width=0, minwidth=0, stretch=False)
+            else:
+                self._tree.column(col_id, width=width, minwidth=60, stretch=False)
+                displayed.append(col_id)
+
+        # Mettre a jour displaycolumns pour masquer reellement les colonnes
+        visible_cols = [c[0] for c in self._COLUMNS
+                        if c[0] not in self._TOGGLEABLE
+                        or self._col_visible.get(c[0], True)]
+        self._tree.configure(displaycolumns=visible_cols)
 
     # ──────── Cycle de vie ────────
 
@@ -389,6 +456,7 @@ class TraiterView(ctk.CTkFrame):
                     params.get("section", "Grande"),
                     delta_petit, delta_grand,
                     prof_atteinte, prof_arrondie,
+                    "",  # derniere_val (logique a implementer)
                     alpha_str,
                 ),
                 tags=(tag,),
@@ -641,6 +709,7 @@ class TraiterView(ctk.CTkFrame):
             params.get("section", "Grande"),
             delta_petit, delta_grand,
             prof_atteinte, prof_arrondie,
+            "",  # derniere_val (logique a implementer)
             alpha_str,
         ))
 
