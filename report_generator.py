@@ -1206,8 +1206,7 @@ def _draw_diagram_footer(c, left_margin, bottom_margin, table_width,
     for abbr, desc in legend_items:
         cur_y -= LINE_H
         c.drawString(left_margin + 4, cur_y, abbr)
-        arrow_x = left_margin + 4 + pm.stringWidth(abbr, font_normal, FS) + 3
-        c.drawString(arrow_x, cur_y, "\u2192")
+        c.drawString(left_margin + 18, cur_y, "\u2192")
         c.drawString(desc_x, cur_y, desc)
 
     # --- Section Matériel utilisé ---
