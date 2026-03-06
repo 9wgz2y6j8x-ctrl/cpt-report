@@ -322,18 +322,15 @@ class TraiterView(ctk.CTkFrame):
 
     def _apply_column_visibility(self):
         """Met a jour les colonnes affichees selon _col_visible."""
-        displayed = []
+        visible_cols = []
         for col_id, heading, width, anchor in self._COLUMNS:
             if col_id in self._TOGGLEABLE and not self._col_visible.get(col_id, True):
                 self._tree.column(col_id, width=0, minwidth=0, stretch=False)
             else:
-                self._tree.column(col_id, width=width, minwidth=60, stretch=False)
-                displayed.append(col_id)
+                self._tree.column(col_id, width=width, minwidth=60, stretch=True)
+                visible_cols.append(col_id)
 
         # Mettre a jour displaycolumns pour masquer reellement les colonnes
-        visible_cols = [c[0] for c in self._COLUMNS
-                        if c[0] not in self._TOGGLEABLE
-                        or self._col_visible.get(c[0], True)]
         self._tree.configure(displaycolumns=visible_cols)
 
     # ──────── Cycle de vie ────────
