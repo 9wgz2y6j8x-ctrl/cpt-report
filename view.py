@@ -2665,10 +2665,22 @@ class RawDataWorkspaceView(ctk.CTkFrame):
         file_data = rdm.get_file(file_path)
         if file_data is None:
             return
-        entry = CPTFileEntry(file_data, rdm)
+
+        # Reutiliser l'entree existante de la vue FILTRER si disponible
+        # (pour conserver l'etat is_filtered et le cache df_filtered)
+        entry = None
+        app_view = self.winfo_toplevel()
+        if hasattr(app_view, 'cleaning_view'):
+            for e in app_view.cleaning_view.cpt_entries:
+                if e.file_path == file_path:
+                    entry = e
+                    break
+        if entry is None:
+            entry = CPTFileEntry(file_data, rdm)
+
         if not entry.ensure_loaded():
             return
-        DataExplorationWindow(self.winfo_toplevel(), entry, rdm)
+        DataExplorationWindow(app_view, entry, rdm)
 
     # ──────────────────────── Sélecteur de date (toolbox) ────────────────────────
 
