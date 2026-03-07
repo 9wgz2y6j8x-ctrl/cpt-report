@@ -11,15 +11,20 @@ from settings_manager import SettingsManager
 # Constantes de style
 # ---------------------------------------------------------------------------
 _COLORS = {
-    "bg": "#F2F2F2",
+    "bg": "#F5F5F7",
+    "sidebar_bg": "#F5F5F7",
+    "content_bg": "#FFFFFF",
     "card": "#FFFFFF",
-    "card_border": "#E0E0E0",
+    "card_border": "#E5E5EA",
+    "card_hover": "#F0F0F5",
     "section_title_bg": "#0115B8",
     "section_title_fg": "#FFFFFF",
-    "label_primary": "#1A1A1A",
-    "label_secondary": "#6B7280",
+    "label_primary": "#1D1D1F",
+    "label_secondary": "#86868B",
+    "label_tertiary": "#AEAEB2",
     "accent": "#0115B8",
     "accent_hover": "#0030E0",
+    "accent_light": "#EEF0FA",
     "danger": "#DC2626",
     "danger_hover": "#B91C1C",
     "success": "#16A34A",
@@ -29,6 +34,12 @@ _COLORS = {
     "input_bg": "#FAFAFA",
     "divider": "#E5E7EB",
     "path_bg": "#F9FAFB",
+    "nav_active_bg": "#FFFFFF",
+    "nav_active_border": "#0115B8",
+    "nav_inactive_fg": "#6B7280",
+    "nav_active_fg": "#1D1D1F",
+    "section_header_fg": "#1D1D1F",
+    "subsection_bg": "#F9FAFB",
 }
 
 _FONTS = {
@@ -41,9 +52,25 @@ _FONTS = {
     "machine_title": ("Verdana", 15, "bold"),
     "machine_field": ("Verdana", 13),
     "machine_label": ("Verdana", 12),
-    "page_title": ("Verdana", 20, "bold"),
+    "page_title": ("Verdana", 22, "bold"),
+    "page_subtitle": ("Verdana", 12),
     "path_text": ("Consolas", 12),
+    "nav_title": ("Verdana", 13, "bold"),
+    "nav_desc": ("Verdana", 11),
+    "content_title": ("Verdana", 18, "bold"),
 }
+
+# Sections definition: (key, icon, title, subtitle)
+_SECTIONS = [
+    ("dossiers",      "\U0001F4C1", "Dossiers de travail",        "Emplacements des fichiers"),
+    ("indexation",    "\U0001F50D", "Indexation",                  "Fichiers d'essais"),
+    ("unites",        "\U0001F4CF", "Unites",                      "Seuils et graphiques"),
+    ("calcul",        "\U0001F9EE", "Parametres de calcul",        "Portance et fondations"),
+    ("rapport",       "\U0001F4C4", "Rapport",                     "Generation et export"),
+    ("qualite",       "\u2705",     "Controle qualite",            "Verification des essais"),
+    ("optimisation",  "\u2699\uFE0F", "Optimisation",              "Filtrage et traitement"),
+    ("machines",      "\U0001F6E0\uFE0F", "Machines",              "Configuration du materiel"),
+]
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -51,17 +78,22 @@ _FONTS = {
 # ═══════════════════════════════════════════════════════════════════════════
 
 class _SectionHeader(ctk.CTkFrame):
-    """Bandeau de titre de section."""
+    """Titre de sous-section dans le panneau de contenu."""
 
     def __init__(self, parent, title: str, **kwargs):
-        super().__init__(parent, fg_color=_COLORS["section_title_bg"],
-                         corner_radius=8, height=40, **kwargs)
-        self.pack(fill="x", pady=(24, 0))
+        super().__init__(parent, fg_color="transparent", height=32, **kwargs)
+        self.pack(fill="x", pady=(20, 4))
         self.pack_propagate(False)
+
+        ctk.CTkFrame(
+            self, fg_color=_COLORS["accent"], width=3, corner_radius=2
+        ).pack(side="left", fill="y", padx=(0, 10))
+
         ctk.CTkLabel(
-            self, text=f"  {title}", font=_FONTS["section_title"],
-            text_color=_COLORS["section_title_fg"], anchor="w"
-        ).pack(side="left", padx=12, fill="y")
+            self, text=title,
+            font=("Verdana", 13, "bold"),
+            text_color=_COLORS["section_header_fg"], anchor="w"
+        ).pack(side="left", fill="y")
 
 
 class _SettingCard(ctk.CTkFrame):
@@ -72,7 +104,7 @@ class _SettingCard(ctk.CTkFrame):
             parent, fg_color=_COLORS["card"], corner_radius=10,
             border_width=1, border_color=_COLORS["card_border"], **kwargs
         )
-        self.pack(fill="x", pady=(8, 0), ipady=6)
+        self.pack(fill="x", pady=(6, 0), ipady=6)
 
 
 class _ToggleSettingCard(_SettingCard):
@@ -232,7 +264,7 @@ class _MachineCard(ctk.CTkFrame):
             parent, fg_color=_COLORS["card"], corner_radius=10,
             border_width=1, border_color=_COLORS["card_border"]
         )
-        self.pack(fill="x", pady=(8, 0))
+        self.pack(fill="x", pady=(6, 0))
 
         self._machine_id = machine_data["id"]
         self._on_save = on_save
@@ -448,14 +480,83 @@ class _MachineCard(ctk.CTkFrame):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Navigation sidebar item
+# ═══════════════════════════════════════════════════════════════════════════
+
+class _NavItem(ctk.CTkFrame):
+    """A clickable navigation card in the sidebar."""
+
+    def __init__(self, parent, icon: str, title: str, subtitle: str,
+                 on_click: Callable, **kwargs):
+        super().__init__(parent, fg_color="transparent", corner_radius=8,
+                         cursor="hand2", height=52, **kwargs)
+        self.pack(fill="x", pady=(2, 0))
+        self.pack_propagate(False)
+
+        self._on_click = on_click
+        self._active = False
+
+        # Accent bar (left edge indicator)
+        self._accent_bar = ctk.CTkFrame(
+            self, fg_color="transparent", width=3, corner_radius=2
+        )
+        self._accent_bar.pack(side="left", fill="y", padx=(4, 0))
+
+        # Content area
+        content = ctk.CTkFrame(self, fg_color="transparent")
+        content.pack(side="left", fill="both", expand=True, padx=(8, 8), pady=6)
+
+        # Title row with icon
+        title_row = ctk.CTkFrame(content, fg_color="transparent")
+        title_row.pack(fill="x")
+
+        self._icon_label = ctk.CTkLabel(
+            title_row, text=icon, font=("Verdana", 13),
+            text_color=_COLORS["nav_inactive_fg"], anchor="w", width=22
+        )
+        self._icon_label.pack(side="left")
+
+        self._title_label = ctk.CTkLabel(
+            title_row, text=title, font=_FONTS["nav_title"],
+            text_color=_COLORS["nav_inactive_fg"], anchor="w"
+        )
+        self._title_label.pack(side="left", padx=(4, 0))
+
+        self._subtitle_label = ctk.CTkLabel(
+            content, text=subtitle, font=_FONTS["nav_desc"],
+            text_color=_COLORS["label_tertiary"], anchor="w"
+        )
+        self._subtitle_label.pack(anchor="w", padx=(26, 0))
+
+        # Click bindings on all children
+        for widget in [self, content, title_row, self._icon_label,
+                       self._title_label, self._subtitle_label]:
+            widget.bind("<Button-1>", lambda e: self._on_click())
+            widget.configure(cursor="hand2")
+
+    def set_active(self, active: bool):
+        self._active = active
+        if active:
+            self.configure(fg_color=_COLORS["nav_active_bg"])
+            self._accent_bar.configure(fg_color=_COLORS["nav_active_border"])
+            self._title_label.configure(text_color=_COLORS["nav_active_fg"])
+            self._icon_label.configure(text_color=_COLORS["accent"])
+        else:
+            self.configure(fg_color="transparent")
+            self._accent_bar.configure(fg_color="transparent")
+            self._title_label.configure(text_color=_COLORS["nav_inactive_fg"])
+            self._icon_label.configure(text_color=_COLORS["nav_inactive_fg"])
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Vue principale du workspace REGLAGES
 # ═══════════════════════════════════════════════════════════════════════════
 
 class SettingsView(ctk.CTkFrame):
     """Interface complète du workspace REGLAGES.
 
-    Affiche toutes les sections de paramètres dans un layout scrollable
-    avec un style moderne cohérent avec le reste de l'application.
+    Layout macOS-inspired : panneau de navigation à gauche,
+    contenu de la section sélectionnée à droite.
     """
 
     def __init__(self, parent, settings_manager: SettingsManager,
@@ -466,35 +567,98 @@ class SettingsView(ctk.CTkFrame):
         self._on_settings_changed = on_settings_changed
         self._model = model
 
-        # Conteneur scrollable
-        self._scroll = ctk.CTkScrollableFrame(
-            self, fg_color=_COLORS["bg"],
-            scrollbar_button_color="#C4C4C4",
-            scrollbar_button_hover_color="#A0A0A0",
-            corner_radius=0
+        # ── Layout : sidebar | content ──
+        self._sidebar = ctk.CTkFrame(
+            self, fg_color=_COLORS["sidebar_bg"], corner_radius=0, width=260
         )
-        self._scroll.pack(fill="both", expand=True, padx=0, pady=0)
+        self._sidebar.pack(side="left", fill="y", padx=0, pady=0)
+        self._sidebar.pack_propagate(False)
 
-        # Contenu interne avec largeur maîtrisée
-        self._inner = ctk.CTkFrame(self._scroll, fg_color="transparent")
-        self._inner.pack(fill="x", expand=True, padx=32, pady=(16, 32))
+        # Separator line
+        ctk.CTkFrame(
+            self, fg_color=_COLORS["divider"], width=1
+        ).pack(side="left", fill="y")
 
-        # Titre de la page
+        # Content panel
+        self._content_panel = ctk.CTkFrame(
+            self, fg_color=_COLORS["content_bg"], corner_radius=0
+        )
+        self._content_panel.pack(side="left", fill="both", expand=True)
+
+        # ── Build sidebar ──
+        self._build_sidebar()
+
+        # ── Build content frames (one per section, shown/hidden) ──
+        self._section_frames: Dict[str, ctk.CTkFrame] = {}
+        self._build_all_sections()
+
+        # ── Select first section ──
+        self._current_section = None
+        self._select_section("dossiers")
+
+        # Démarrer le polling de l'indexation
+        self._poll_indexing_status()
+
+    # ------------------------------------------------------------------
+    # Sidebar construction
+    # ------------------------------------------------------------------
+    def _build_sidebar(self):
+        # Header
+        header = ctk.CTkFrame(self._sidebar, fg_color="transparent")
+        header.pack(fill="x", padx=16, pady=(20, 4))
+
         ctk.CTkLabel(
-            self._inner, text="Reglages",
+            header, text="Reglages",
             font=_FONTS["page_title"],
             text_color=_COLORS["label_primary"], anchor="w"
-        ).pack(anchor="w", pady=(0, 4))
+        ).pack(anchor="w")
 
-        # Chemin du fichier de config (info)
         ctk.CTkLabel(
-            self._inner,
-            text=f"Fichier de configuration : {self._sm.filepath}",
-            font=("Consolas", 11),
-            text_color=_COLORS["label_secondary"], anchor="w"
-        ).pack(anchor="w", pady=(0, 12))
+            header, text=f"{self._sm.filepath}",
+            font=("Consolas", 10),
+            text_color=_COLORS["label_tertiary"], anchor="w",
+            wraplength=228
+        ).pack(anchor="w", pady=(2, 0))
 
-        # Construction des sections
+        # Divider
+        ctk.CTkFrame(
+            self._sidebar, fg_color=_COLORS["divider"], height=1
+        ).pack(fill="x", padx=16, pady=(12, 8))
+
+        # Nav items
+        self._nav_items: Dict[str, _NavItem] = {}
+        for key, icon, title, subtitle in _SECTIONS:
+            item = _NavItem(
+                self._sidebar, icon=icon, title=title, subtitle=subtitle,
+                on_click=lambda k=key: self._select_section(k)
+            )
+            self._nav_items[key] = item
+
+    # ------------------------------------------------------------------
+    # Section selection
+    # ------------------------------------------------------------------
+    def _select_section(self, section_key: str):
+        if self._current_section == section_key:
+            return
+
+        # Update nav highlights
+        for key, item in self._nav_items.items():
+            item.set_active(key == section_key)
+
+        # Hide current, show new
+        if self._current_section and self._current_section in self._section_frames:
+            self._section_frames[self._current_section].pack_forget()
+
+        self._current_section = section_key
+        if section_key in self._section_frames:
+            self._section_frames[section_key].pack(
+                fill="both", expand=True, in_=self._content_panel
+            )
+
+    # ------------------------------------------------------------------
+    # Build all section content frames
+    # ------------------------------------------------------------------
+    def _build_all_sections(self):
         self._build_section_dossiers()
         self._build_section_indexation()
         self._build_section_unites()
@@ -504,8 +668,35 @@ class SettingsView(ctk.CTkFrame):
         self._build_section_optimisation()
         self._build_section_machines()
 
-        # Démarrer le polling de l'indexation
-        self._poll_indexing_status()
+    def _make_section_frame(self, key: str, title: str) -> ctk.CTkScrollableFrame:
+        """Create a scrollable content frame for a section."""
+        scroll = ctk.CTkScrollableFrame(
+            self._content_panel, fg_color=_COLORS["content_bg"],
+            scrollbar_button_color="#D4D4D8",
+            scrollbar_button_hover_color="#A1A1AA",
+            corner_radius=0
+        )
+        self._section_frames[key] = scroll
+
+        # Section title at top of content
+        inner_header = ctk.CTkFrame(scroll, fg_color="transparent")
+        inner_header.pack(fill="x", padx=28, pady=(24, 0))
+
+        ctk.CTkLabel(
+            inner_header, text=title,
+            font=_FONTS["content_title"],
+            text_color=_COLORS["label_primary"], anchor="w"
+        ).pack(anchor="w")
+
+        # Thin accent line under title
+        ctk.CTkFrame(
+            scroll, fg_color=_COLORS["accent"], height=2, corner_radius=1
+        ).pack(fill="x", padx=28, pady=(8, 0))
+
+        # Return a container for the actual content
+        content = ctk.CTkFrame(scroll, fg_color="transparent")
+        content.pack(fill="x", expand=True, padx=28, pady=(8, 28))
+        return content
 
     # ------------------------------------------------------------------
     # Callback wrapper
@@ -524,12 +715,12 @@ class SettingsView(ctk.CTkFrame):
     # Section : Dossiers de travail
     # ------------------------------------------------------------------
     def _build_section_dossiers(self):
-        _SectionHeader(self._inner, "Dossiers de travail")
+        inner = self._make_section_frame("dossiers", "Dossiers de travail")
 
         data = self._sm.get_section("dossiers_travail")
 
         _PathSettingCard(
-            self._inner,
+            inner,
             title="Emplacement des fichiers d'essais bruts (GEF)",
             description="Dossier principal contenant les fichiers .GEF des essais CPT.",
             initial_value=data.get("emplacement_gef", ""),
@@ -537,7 +728,7 @@ class SettingsView(ctk.CTkFrame):
         )
 
         _PathSettingCard(
-            self._inner,
+            inner,
             title="Emplacement secondaire des fichiers d'essais bruts",
             description="Dossier supplémentaire facultatif pour les fichiers GEF.",
             initial_value=data.get("emplacement_gef_secondaire", ""),
@@ -546,7 +737,7 @@ class SettingsView(ctk.CTkFrame):
         )
 
         _PathSettingCard(
-            self._inner,
+            inner,
             title="Dossier d'enregistrement des résultats",
             description="Emplacement où les résultats traités seront enregistrés.",
             initial_value=data.get("dossier_resultats", ""),
@@ -557,12 +748,15 @@ class SettingsView(ctk.CTkFrame):
     # Section : Unites
     # ------------------------------------------------------------------
     def _build_section_unites(self):
-        _SectionHeader(self._inner, "Unites")
+        inner = self._make_section_frame("unites", "Unites")
 
         data = self._sm.get_section("unites")
 
-        # --- Surface de pointe ---
+        # --- Sous-section : Surface de pointe ---
+        _SectionHeader(inner, "Surface de pointe")
+
         self._build_numeric_param_card_generic(
+            parent=inner,
             title="Surface de pointe du cone",
             description=(
                 "Surface de la pointe du cone penetrometrique. "
@@ -575,8 +769,11 @@ class SettingsView(ctk.CTkFrame):
             setting_key="tip_area_cm2",
         )
 
-        # --- Plages de detection qc ---
+        # --- Sous-section : Seuils de detection ---
+        _SectionHeader(inner, "Seuils de detection qc")
+
         self._build_numeric_param_card_generic(
+            parent=inner,
             title="Seuil max qc pour detection MPa",
             description="Si le P99 des valeurs absolues de qc est inferieur ou egal a ce seuil, l'unite est detectee comme MPa.",
             unit="",
@@ -587,6 +784,7 @@ class SettingsView(ctk.CTkFrame):
         )
 
         self._build_numeric_param_card_generic(
+            parent=inner,
             title="Seuil max qc pour detection kg",
             description="Si le P99 des valeurs absolues de qc est inferieur ou egal a ce seuil (et superieur au seuil MPa), l'unite est detectee comme kg.",
             unit="",
@@ -596,8 +794,10 @@ class SettingsView(ctk.CTkFrame):
             setting_key="qc_kg_max",
         )
 
-        # --- Plages de detection Qst ---
+        _SectionHeader(inner, "Seuils de detection Qst")
+
         self._build_numeric_param_card_generic(
+            parent=inner,
             title="Seuil max Qst pour detection kN",
             description="Si le P99 des valeurs absolues de Qst est inferieur ou egal a ce seuil, l'unite est detectee comme kN.",
             unit="",
@@ -608,6 +808,7 @@ class SettingsView(ctk.CTkFrame):
         )
 
         self._build_numeric_param_card_generic(
+            parent=inner,
             title="Seuil max Qst pour detection kg",
             description="Si le P99 des valeurs absolues de Qst est inferieur ou egal a ce seuil (et superieur au seuil kN), l'unite est detectee comme kg.",
             unit="",
@@ -617,9 +818,11 @@ class SettingsView(ctk.CTkFrame):
             setting_key="qst_kg_max",
         )
 
-        # --- Percentile ---
+        # --- Sous-section : Affichage ---
+        _SectionHeader(inner, "Affichage")
+
         _ComboSettingCard(
-            self._inner,
+            inner,
             title="Percentile pour la detection des unites",
             description=(
                 "Percentile utilise pour evaluer les plages de valeurs. "
@@ -630,9 +833,8 @@ class SettingsView(ctk.CTkFrame):
             on_change=self._make_setter_float("unites", "percentile"),
         )
 
-        # --- Paire de sortie graphique ---
         _ComboSettingCard(
-            self._inner,
+            inner,
             title="Unites du graphique CPT",
             description="Choix des unites affichees sur le graphique CPT (axes et labels).",
             values=["MPa / kN", "kg/cm\u00b2 / kg"],
@@ -666,9 +868,11 @@ class SettingsView(ctk.CTkFrame):
     def _build_numeric_param_card_generic(self, title: str, description: str,
                                            unit: str, default_value, current_value,
                                            section: str, setting_key: str,
-                                           warning_text: str = ""):
+                                           warning_text: str = "",
+                                           parent=None):
         """Construit une carte de parametre numerique pour une section quelconque."""
-        card = _SettingCard(self._inner)
+        target = parent if parent is not None else self._inner
+        card = _SettingCard(target)
 
         text_frame = ctk.CTkFrame(card, fg_color="transparent")
         text_frame.pack(side="left", fill="both", expand=True, padx=16, pady=10)
@@ -757,12 +961,12 @@ class SettingsView(ctk.CTkFrame):
     # Section : Rapport
     # ------------------------------------------------------------------
     def _build_section_rapport(self):
-        _SectionHeader(self._inner, "Rapport")
+        inner = self._make_section_frame("rapport", "Rapport")
 
         data = self._sm.get_section("rapport")
 
         _ComboSettingCard(
-            self._inner,
+            inner,
             title="Reechantillonnage des donnees pour le rapport",
             description=(
                 "Pas vertical (en cm) utilise pour espacer les profondeurs "
@@ -778,12 +982,12 @@ class SettingsView(ctk.CTkFrame):
     # Section : Contrôle de la qualité des essais
     # ------------------------------------------------------------------
     def _build_section_qualite(self):
-        _SectionHeader(self._inner, "Controle de la qualite des essais")
+        inner = self._make_section_frame("qualite", "Controle de la qualite des essais")
 
         data = self._sm.get_section("controle_qualite")
 
         _ToggleSettingCard(
-            self._inner,
+            inner,
             title="Verifier la presence d'un fichier de calibration valide",
             description=(
                 "Controle que chaque essai est associe a un fichier "
@@ -795,7 +999,7 @@ class SettingsView(ctk.CTkFrame):
         )
 
         _ToggleSettingCard(
-            self._inner,
+            inner,
             title="Verifier la vitesse d'enfoncement et detecter les pauses",
             description=(
                 "Analyse la vitesse de penetration et signale les arrets "
@@ -807,7 +1011,7 @@ class SettingsView(ctk.CTkFrame):
         )
 
         _ToggleSettingCard(
-            self._inner,
+            inner,
             title="Verifier les valeurs negatives de qc",
             description=(
                 "Detecte les valeurs de resistance de pointe (qc) negatives "
@@ -822,12 +1026,12 @@ class SettingsView(ctk.CTkFrame):
     # Section : Optimisation du traitement
     # ------------------------------------------------------------------
     def _build_section_optimisation(self):
-        _SectionHeader(self._inner, "Optimisation du traitement")
+        inner = self._make_section_frame("optimisation", "Optimisation du traitement")
 
         data = self._sm.get_section("optimisation_traitement")
 
         _ToggleSettingCard(
-            self._inner,
+            inner,
             title="Detection des preforages",
             description=(
                 "Identifie automatiquement les zones de preforage "
@@ -839,7 +1043,7 @@ class SettingsView(ctk.CTkFrame):
         )
 
         _ComboSettingCard(
-            self._inner,
+            inner,
             title="Reglage du facteur k pour le filtrage des donnees",
             description=(
                 "Le facteur k controle l'intensite du lissage applique "
@@ -856,9 +1060,9 @@ class SettingsView(ctk.CTkFrame):
     # Section : Indexation des fichiers d'essais
     # ------------------------------------------------------------------
     def _build_section_indexation(self):
-        _SectionHeader(self._inner, "Indexation des fichiers d'essais")
+        inner = self._make_section_frame("indexation", "Indexation des fichiers d'essais")
 
-        card = _SettingCard(self._inner)
+        card = _SettingCard(inner)
 
         text_frame = ctk.CTkFrame(card, fg_color="transparent")
         text_frame.pack(fill="x", padx=16, pady=(10, 4))
@@ -1002,12 +1206,15 @@ class SettingsView(ctk.CTkFrame):
     # Section : Paramètres de calcul
     # ------------------------------------------------------------------
     def _build_section_parametres_calcul(self):
-        _SectionHeader(self._inner, "Paramètres de calcul")
+        inner = self._make_section_frame("calcul", "Parametres de calcul")
 
         data = self._sm.get_section("parametres_calcul")
 
-        # --- Masse volumique du sol sec ---
+        # --- Sous-section : Proprietes du sol ---
+        _SectionHeader(inner, "Proprietes du sol")
+
         self._build_numeric_param_card(
+            parent=inner,
             title="Masse volumique du sol sec",
             description="Valeur utilisée pour les calculs géotechniques.",
             unit="kg/m³",
@@ -1017,8 +1224,8 @@ class SettingsView(ctk.CTkFrame):
             warning_text="Attention : la modification de ce paramètre affecte tous les calculs de portance.",
         )
 
-        # --- Masse volumique du sol saturé ---
         self._build_numeric_param_card(
+            parent=inner,
             title="Masse volumique du sol saturé",
             description="Valeur utilisée pour les calculs en conditions saturées.",
             unit="kg/m³",
@@ -1028,9 +1235,11 @@ class SettingsView(ctk.CTkFrame):
             warning_text="Attention : la modification de ce paramètre affecte tous les calculs de portance.",
         )
 
-        # --- Méthode de calcul de la portance ---
+        # --- Sous-section : Methode et fondations ---
+        _SectionHeader(inner, "Methode et fondations")
+
         _ComboSettingCard(
-            self._inner,
+            inner,
             title="Méthode de calcul de la portance",
             description=(
                 "Méthode utilisée pour le calcul de la capacité portante "
@@ -1043,8 +1252,8 @@ class SettingsView(ctk.CTkFrame):
             convert_int=False
         )
 
-        # --- Largeur de semelle de fondation 1 ---
         self._build_numeric_param_card(
+            parent=inner,
             title="Largeur de semelle de fondation 1",
             description="Largeur de la première semelle de fondation utilisée dans les calculs.",
             unit="m",
@@ -1053,8 +1262,8 @@ class SettingsView(ctk.CTkFrame):
             setting_key="largeur_semelle_fondation_1",
         )
 
-        # --- Largeur de semelle de fondation 2 ---
         self._build_numeric_param_card(
+            parent=inner,
             title="Largeur de semelle de fondation 2",
             description="Largeur de la deuxième semelle de fondation utilisée dans les calculs.",
             unit="m",
@@ -1063,8 +1272,11 @@ class SettingsView(ctk.CTkFrame):
             setting_key="largeur_semelle_fondation_2",
         )
 
-        # --- Coefficient de sécurité ---
+        # --- Sous-section : Securite et seuils ---
+        _SectionHeader(inner, "Securite et seuils")
+
         self._build_numeric_param_card(
+            parent=inner,
             title="Coefficient de sécurité",
             description=(
                 "Coefficient de sécurité utilisé pour le calcul des pressions "
@@ -1079,8 +1291,8 @@ class SettingsView(ctk.CTkFrame):
             max_value=4,
         )
 
-        # --- Seuil de détection refus pointe ---
         self._build_numeric_param_card(
+            parent=inner,
             title="Seuil de détection refus pointe",
             description=(
                 "Seuil de résistance de pointe (qc) au-delà duquel un refus "
@@ -1105,9 +1317,11 @@ class SettingsView(ctk.CTkFrame):
                                    unit: str, default_value, current_value,
                                    setting_key: str, warning_text: str = "",
                                    min_value: float = None,
-                                   max_value: float = None):
+                                   max_value: float = None,
+                                   parent=None):
         """Construit une carte de paramètre numérique avec bouton de réinitialisation."""
-        card = _SettingCard(self._inner)
+        target = parent if parent is not None else self._inner
+        card = _SettingCard(target)
 
         text_frame = ctk.CTkFrame(card, fg_color="transparent")
         text_frame.pack(side="left", fill="both", expand=True, padx=16, pady=10)
@@ -1208,11 +1422,11 @@ class SettingsView(ctk.CTkFrame):
     # Section : Configuration des machines
     # ------------------------------------------------------------------
     def _build_section_machines(self):
-        _SectionHeader(self._inner, "Configuration des machines")
+        inner = self._make_section_frame("machines", "Configuration des machines")
 
         # Bouton ajouter
-        add_frame = ctk.CTkFrame(self._inner, fg_color="transparent")
-        add_frame.pack(fill="x", pady=(12, 0))
+        add_frame = ctk.CTkFrame(inner, fg_color="transparent")
+        add_frame.pack(fill="x", pady=(8, 0))
 
         ctk.CTkButton(
             add_frame, text="+ Ajouter une machine", font=_FONTS["button_sm"],
@@ -1225,7 +1439,7 @@ class SettingsView(ctk.CTkFrame):
 
         # Conteneur des cartes machines
         self._machines_container = ctk.CTkFrame(
-            self._inner, fg_color="transparent"
+            inner, fg_color="transparent"
         )
         self._machines_container.pack(fill="x", pady=(4, 0))
 
