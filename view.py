@@ -1703,8 +1703,9 @@ class FileSearchZoneView(ctk.CTkFrame):
             self.update_idletasks()
             
             # Après 2 secondes, changer pour un message plus approprié
+            total = result.get('total_files', 0)
             self.after(2000, lambda: self.results_count_label.configure(
-                text="Affichage des fichiers les plus récents", 
+                text=f"Affichage de {total} fichiers indexés",
                 text_color="#1565C0"
             ))
             
@@ -3215,15 +3216,15 @@ class AppView(ctk.CTk):
         if hasattr(self, 'quick_search_zone'):
             self.quick_search_zone.indexing_completed = True
             
-            # Afficher les fichiers de la date la plus récente
-            latest_files = self.model.get_latest_date_files()
-            if latest_files:
-                self.quick_search_zone.display_search_results(latest_files)
-                print(f"DEBUG: Affichage de {len(latest_files)} fichiers de la date la plus récente")
-                
+            # Afficher l'intégralité des fichiers indexés
+            all_files = self.model.get_all_indexed_files()
+            if all_files:
+                self.quick_search_zone.display_search_results(all_files)
+                print(f"DEBUG: Affichage de {len(all_files)} fichiers indexés (totalité)")
+
                 # Mettre le bon message après affichage des fichiers
                 self.quick_search_zone.results_count_label.configure(
-                    text="Affichage des fichiers les plus récents",
+                    text=f"Affichage de {len(all_files)} fichiers indexés",
                     text_color="#1565C0"
                 )
             else:
