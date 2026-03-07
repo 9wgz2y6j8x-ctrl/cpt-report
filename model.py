@@ -520,6 +520,16 @@ class AppModel:
         print(f"DEBUG: {len(results)} fichiers de la date la plus récente")
         return results
 
+    def get_all_indexed_files(self) -> List[Dict]:
+        """Retourne l'intégralité des fichiers indexés."""
+        if not self.cpt_indexer:
+            print("DEBUG: Indexeur non initialisé")
+            return []
+
+        results = list(self.cpt_indexer.indexed_data)
+        print(f"DEBUG: {len(results)} fichiers indexés au total")
+        return results
+
     def get_indexing_status(self) -> Dict:
         """Retourne le statut de l'indexation."""
         return self.indexing_status.copy()
