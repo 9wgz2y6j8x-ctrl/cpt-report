@@ -6,7 +6,8 @@ import tkinter as tk
 import threading
 from model import get_resource_path
 from settings_view import SettingsView
-from cpt_cleaning_view import CPTCleaningView
+from cpt_cleaning_view import CPTCleaningView, CPTFileEntry
+from data_exploration_window import DataExplorationWindow
 from observations_view3 import ObservationsView
 from cotes_view import CotesView
 from traiter_view import TraiterView
@@ -2016,6 +2017,21 @@ class RawDataWorkspaceView(ctk.CTkFrame):
         )
         self.btn_remove_sel.pack(side="left", padx=(0, 8))
 
+        self.btn_explore_data = ctk.CTkButton(
+            actions_bar,
+            text="Afficher les donnees",
+            font=("Verdana", 13),
+            height=32,
+            corner_radius=8,
+            border_width=1,
+            fg_color="#E8EDF2",
+            text_color="#0115B8",
+            hover_color="#D0D8E4",
+            border_color="#90CAF9",
+            command=self._on_explore_data,
+        )
+        self.btn_explore_data.pack(side="left", padx=(0, 8))
+
         self.info_label = ctk.CTkLabel(
             actions_bar,
             text="Utilisez la Recherche Rapide pour ajouter des fichiers.",
@@ -2638,6 +2654,21 @@ class RawDataWorkspaceView(ctk.CTkFrame):
 
     def _on_delete_key(self, event):
         self._on_remove_selection()
+
+    def _on_explore_data(self):
+        """Ouvre la fenetre d'exploration des donnees pour le sondage selectionne."""
+        sel = self.tree.selection()
+        if not sel:
+            return
+        file_path = sel[0]
+        rdm = self.model.raw_data_manager
+        file_data = rdm.get_file(file_path)
+        if file_data is None:
+            return
+        entry = CPTFileEntry(file_data, rdm)
+        if not entry.ensure_loaded():
+            return
+        DataExplorationWindow(self.winfo_toplevel(), entry, rdm)
 
     # ──────────────────────── Sélecteur de date (toolbox) ────────────────────────
 
