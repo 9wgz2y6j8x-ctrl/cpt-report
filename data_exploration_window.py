@@ -76,7 +76,7 @@ class DataExplorationWindow(ctk.CTkToplevel):
 
         # Toggle brut / filtre
         self._toggle_var = tk.BooleanVar(value=False)
-        has_filtered = self._entry.df_filtered is not None
+        has_filtered = self._entry.is_filtered
         toggle_state = "normal" if has_filtered else "disabled"
 
         self._toggle_label = ctk.CTkLabel(
